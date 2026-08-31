@@ -132,9 +132,12 @@ fun ColorPickerDialog(
                 ) {
                     drawRect(Brush.horizontalGradient(listOf(Color.White, hsv(hue, 1f, 1f))))
                     drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
+                    // A proper cursor: the chosen colour in the middle so it stays visible
+                    // against both ends of the square.
                     val centre = Offset(sat * size.width, (1f - value) * size.height)
-                    drawCircle(Color.White, radius = 11f, center = centre, style = Stroke(3f))
-                    drawCircle(Color.Black, radius = 14f, center = centre, style = Stroke(1.5f))
+                    drawCircle(hsv(hue, sat, value), radius = 9.dp.toPx(), center = centre)
+                    drawCircle(Color.White, radius = 9.dp.toPx(), center = centre, style = Stroke(2.5.dp.toPx()))
+                    drawCircle(Color.Black.copy(alpha = 0.5f), radius = 11.dp.toPx(), center = centre, style = Stroke(1.dp.toPx()))
                 }
 
                 Canvas(

@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.filled.ZoomOutMap
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -121,6 +122,9 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
     var textSize by remember { mutableFloatStateOf(0.05f) }
     var liveStroke by remember { mutableStateOf<List<PointN>>(emptyList()) }
     var eyedropper by remember { mutableStateOf(false) }
+    // Where the finger is while sampling, and what is under it.
+    var pickPoint by remember { mutableStateOf<Offset?>(null) }
+    var pickColor by remember { mutableStateOf(Color.Transparent) }
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
@@ -308,20 +312,34 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
             val rect = fittedRect(canvasSize, bitmap.width, bitmap.height)
 
             val gestures = when (tab) {
-                // Eyedropper mode borrows the draw surface: one tap samples and switches back.
-                EditorTab.DRAW if eyedropper -> Modifier.pointerInput(rect, bitmap) {
-                    detectTapGestures { p ->
+                // Eyedropper mode borrows the draw surface. Press and *hold* to see a loupe
+                // of the colour under your finger, slide to adjust, lift to accept — a finger
+                // covers the pixel it is on, so a blind tap would be a guess.
+                EditorTab.DRAW if eyedropper -> Modifier.pointerInput(rect, bitmap, pixelFiltered, filter) {
+                    fun sampleAt(p: Offset) {
                         val n = rect.normalise(p)
                         val px = (n.x * bitmap.width).toInt().coerceIn(0, bitmap.width - 1)
                         val py = (n.y * bitmap.height).toInt().coerceIn(0, bitmap.height - 1)
-                        val sampled = bitmap.getPixel(px, py)
-                        brushColor = Color(
+                        val raw = bitmap.getPixel(px, py)
+                        pickColor = Color(
                             if (pixelFiltered == null) {
-                                Filters.applyMatrixToColor(sampled, Filters.matrixValues(filter))
+                                Filters.applyMatrixToColor(raw, Filters.matrixValues(filter))
                             } else {
-                                sampled
+                                raw
                             }
                         )
+                        pickPoint = p
+                    }
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        sampleAt(down.position)
+                        down.consume()
+                        drag(down.id) { change ->
+                            sampleAt(change.position)
+                            change.consume()
+                        }
+                        brushColor = pickColor
+                        pickPoint = null
                         eyedropper = false
                     }
                 }
@@ -493,6 +511,7 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                     drawStrokes(r, strokes, liveStroke, brushColor, brushWidth)
                     drawOverlays(r, overlays, selectedOverlay, signatures, handleRadius)
                 }
+                pickPoint?.let { drawEyedropper(it, pickColor) }
             }
         }
     }
@@ -623,6 +642,35 @@ private fun DrawScope.drawOverlays(
             }
         }
     }
+}
+
+/**
+ * The eyedropper cursor: a crosshair on the exact pixel being read, and a swatch bubble held
+ * clear of the fingertip so the colour is actually visible while choosing it.
+ */
+private fun DrawScope.drawEyedropper(point: Offset, colour: Color) {
+    val arm = 11.dp.toPx()
+    val gap = 5.dp.toPx()
+    listOf(
+        Offset(-arm, 0f) to Offset(-gap, 0f),
+        Offset(arm, 0f) to Offset(gap, 0f),
+        Offset(0f, -arm) to Offset(0f, -gap),
+        Offset(0f, arm) to Offset(0f, gap),
+    ).forEach { (from, to) ->
+        drawLine(
+            Color.White,
+            Offset(point.x + from.x, point.y + from.y),
+            Offset(point.x + to.x, point.y + to.y),
+            strokeWidth = 2.dp.toPx(),
+        )
+    }
+    drawCircle(Color.White, radius = gap, center = point, style = StrokeStyle(1.5.dp.toPx()))
+
+    val bubble = Offset(point.x, point.y - 46.dp.toPx())
+    val radius = 24.dp.toPx()
+    drawCircle(Color.Black.copy(alpha = 0.35f), radius = radius + 3.dp.toPx(), center = bubble)
+    drawCircle(colour, radius = radius, center = bubble)
+    drawCircle(Color.White, radius = radius, center = bubble, style = StrokeStyle(3.dp.toPx()))
 }
 
 /** Signatures can be turned; text cannot (yet). */

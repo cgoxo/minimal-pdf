@@ -350,7 +350,7 @@ Five tabs over a single drawing surface:
 | Tab | Does |
 |---|---|
 | **Filter** | Original / Greyscale / B&W / Document. Original and Greyscale get brightness, contrast and saturation; **B&W and Document get a single "Ink sensitivity" knob** instead — they are ink decisions, not tone curves, so three sliders was two too many. Every mode except B&W also has **Enhance (sharpen)** |
-| **Draw** | Freehand brush: a **Colour** button opening a full hue + saturation/value picker, a row of one-tap preset swatches, **Pick from image** (an eyedropper — tap the page to take its colour), size slider, undo, clear |
+| **Draw** | Freehand brush: a **Colour** button opening a full hue + saturation/value picker, a row of one-tap preset swatches, **Pick from image** (an eyedropper — press and hold the page; a loupe shows the colour under your finger, slide to adjust, lift to accept), size slider, undo, clear |
 | **Text** | Add a text box, drag it, change its size and colour. Tap it to select: a dashed frame appears with a red **✕** on the top-right corner to delete it and a green **grip** on the bottom-right to resize by dragging |
 | **Sign** | Same on-page frame — drag to move, corner grip to resize, ✕ to delete — plus a rotation slider and ±90° buttons. Saved signatures can be deleted from the strip with their own ✕. Two ways to get a signature: **Draw** it on a pad with your finger, or **Scan from paper** — photograph a signature written on paper and the app lifts the ink off the page. Either way it is saved as a reusable transparent PNG that can be dropped on any page and resized |
 | **Crop** | Four draggable corner handles, plus auto-detect and rotate |
@@ -468,6 +468,16 @@ And the PDFs are simply visible in the phone's **Files** app under **Documents �
 
 **`adb devices` shows nothing** — try another cable (charge-only cables are common), and
 check the phone's USB mode is not "charging only". Re-check USB debugging is on.
+
+**Android Studio shows dozens of red errors but the app builds and runs fine** — trust
+Gradle, not the editor. `./gradlew assembleDebug` is the source of truth; the editor uses its
+own bundled Kotlin/Compose analyzer, and when that disagrees with the project's version you get
+phantom errors like *"Argument type mismatch: … but ComposableFunction1<PaddingValues, Unit>
+was expected"* on ordinary `Scaffold { }` and `Column { }` calls. In order: **File → Invalidate
+Caches… → Invalidate and Restart**; check **Settings → Languages & Frameworks → Kotlin → K2
+mode** is enabled; check the Jetpack Compose plugin is enabled. If it persists, it is your
+Studio build (this project has been developed against one bundling a *dev* Kotlin, 2.4.255-dev,
+while the project itself uses stable 2.4.10) and the red squiggles are cosmetic.
 
 **Gradle sync or build fails after you edit `build.gradle.kts`** — read the *first* error,
 not the last. Gradle prints a long tail of noise after the real message. `./gradlew
