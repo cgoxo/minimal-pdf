@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -34,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -45,6 +45,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -56,6 +57,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke as StrokeStyle
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -108,6 +110,24 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
     var textSize by remember { mutableFloatStateOf(0.05f) }
     var liveStroke by remember { mutableStateOf<List<PointN>>(emptyList()) }
 
+    // Signature PNGs, decoded once. Previously every redraw decoded them from disk, which
+    // made dragging one feel like wading through treacle.
+    val signatures = remember { mutableStateMapOf<String, ImageBitmap>() }
+    LaunchedEffect(overlays) {
+        overlays.filterIsInstance<Overlay.Signature>().forEach { overlay ->
+            if (!signatures.containsKey(overlay.fileName)) {
+                val bmp = withContext(Dispatchers.IO) {
+                    PageRenderer.decode(File(repo.signaturesDir, overlay.fileName), 900)
+                }
+                if (bmp != null) signatures[overlay.fileName] = bmp.asImageBitmap()
+            }
+        }
+    }
+
+    val density = LocalDensity.current
+    val handleRadius = with(density) { 13.dp.toPx() }
+    val handleHit = with(density) { 30.dp.toPx() }
+
     fun currentPage(): Page = original.copy(
         crop = crop, rotation = rotation, filter = filter, strokes = strokes, overlays = overlays
     )
@@ -155,12 +175,6 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                 title = { Text("Edit page") },
                 navigationIcon = { IconButton(onClick = { save(); onBack() }) { Icon(Icons.Default.ArrowBack, "Back") } },
                 actions = {
-                    if (tab == EditorTab.DRAW) {
-                        IconButton(
-                            onClick = { if (strokes.isNotEmpty()) strokes = strokes.dropLast(1) },
-                            enabled = strokes.isNotEmpty(),
-                        ) { Icon(Icons.Default.Undo, "Undo") }
-                    }
                     IconButton(onClick = { save(); onBack() }) { Icon(Icons.Default.Check, "Done") }
                 },
             )
@@ -274,21 +288,53 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                 }
 
                 EditorTab.TEXT, EditorTab.SIGN -> Modifier
-                    .pointerInput(overlays, rect) {
+                    .pointerInput(overlays, selectedOverlay, rect, signatures.size) {
                         detectTapGestures { p ->
-                            val n = rect.normalise(p)
+                            val selected = overlays.firstOrNull { it.id == selectedOverlay }
+                            val bounds = selected?.let { overlayBounds(rect, it, signatures) }
+                            // The ✕ badge sits on the selection border, so check it first.
+                            if (selected != null && bounds != null &&
+                                (deleteHandle(bounds) - p).getDistance() < handleHit
+                            ) {
+                                overlays = overlays.filterNot { it.id == selected.id }
+                                selectedOverlay = null
+                                return@detectTapGestures
+                            }
                             selectedOverlay = overlays
-                                .minByOrNull { abs(it.posN.x - n.x) + abs(it.posN.y - n.y) }
-                                ?.takeIf { abs(it.posN.x - n.x) < 0.3f && abs(it.posN.y - n.y) < 0.3f }
+                                .lastOrNull { overlayBounds(rect, it, signatures)?.contains(p) == true }
                                 ?.id
+                                ?: overlays
+                                    .minByOrNull { (rect.denormalise(it.posN) - p).getDistance() }
+                                    ?.takeIf { (rect.denormalise(it.posN) - p).getDistance() < handleHit * 2 }
+                                    ?.id
                         }
                     }
-                    .pointerInput(selectedOverlay, rect) {
-                        detectDragGestures { change, drag ->
+                    .pointerInput(overlays, selectedOverlay, rect, signatures.size) {
+                        var mode = 0 // 0 = none, 1 = move, 2 = resize
+                        detectDragGestures(
+                            onDragStart = { p ->
+                                val selected = overlays.firstOrNull { it.id == selectedOverlay }
+                                val bounds = selected?.let { overlayBounds(rect, it, signatures) }
+                                mode = when {
+                                    bounds != null && (resizeHandle(bounds) - p).getDistance() < handleHit -> 2
+                                    bounds != null && bounds.contains(p) -> 1
+                                    else -> {
+                                        val under = overlays.lastOrNull {
+                                            overlayBounds(rect, it, signatures)?.contains(p) == true
+                                        }
+                                        if (under != null) { selectedOverlay = under.id; 1 } else 0
+                                    }
+                                }
+                            },
+                            onDragEnd = { mode = 0 },
+                            onDragCancel = { mode = 0 },
+                        ) { change, drag ->
                             val id = selectedOverlay ?: return@detectDragGestures
+                            if (mode == 0) return@detectDragGestures
                             change.consume()
                             overlays = overlays.map { o ->
-                                if (o.id != id) o else {
+                                if (o.id != id) return@map o
+                                if (mode == 1) {
                                     val np = PointN(
                                         (o.posN.x + drag.x / rect.width).coerceIn(0f, 1f),
                                         (o.posN.y + drag.y / rect.height).coerceIn(0f, 1f),
@@ -296,6 +342,17 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                                     when (o) {
                                         is Overlay.Text -> o.copy(posN = np)
                                         is Overlay.Signature -> o.copy(posN = np)
+                                    }
+                                } else {
+                                    // Dragging the corner handle scales from the anchor point.
+                                    val bounds = overlayBounds(rect, o, signatures) ?: return@map o
+                                    val factor = ((bounds.width + drag.x) / bounds.width)
+                                        .coerceIn(0.85f, 1.18f)
+                                    when (o) {
+                                        is Overlay.Text ->
+                                            o.copy(sizeN = (o.sizeN * factor).coerceIn(0.015f, 0.4f))
+                                        is Overlay.Signature ->
+                                            o.copy(widthN = (o.widthN * factor).coerceIn(0.05f, 1f))
                                     }
                                 }
                             }
@@ -346,7 +403,7 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                     drawCropQuad(r, crop ?: Quad.FULL)
                 } else {
                     drawStrokes(r, strokes, liveStroke, brushColor, brushWidth)
-                    drawOverlays(r, overlays, selectedOverlay, repo)
+                    drawOverlays(r, overlays, selectedOverlay, signatures, handleRadius)
                 }
             }
         }
@@ -389,11 +446,44 @@ private fun DrawScope.drawStrokes(
     draw(live, liveColor, liveWidth)
 }
 
+/**
+ * Bounding box of an overlay in canvas pixels — used both to draw the selection frame and to
+ * hit-test taps, so what you see is exactly what you can grab.
+ */
+private fun overlayBounds(rect: Rect, overlay: Overlay, signatures: Map<String, ImageBitmap>): Rect? {
+    val origin = rect.denormalise(overlay.posN)
+    return when (overlay) {
+        is Overlay.Text -> {
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                .apply { textSize = overlay.sizeN * rect.height }
+            val lines = overlay.text.split("\n")
+            val width = lines.maxOf { paint.measureText(it) }
+            val height = paint.textSize * (0.3f + 1.2f * lines.size)
+            // drawText positions by baseline, so the box starts one line height above it.
+            Rect(origin.x, origin.y - paint.textSize, origin.x + width, origin.y - paint.textSize + height)
+        }
+
+        is Overlay.Signature -> {
+            val bmp = signatures[overlay.fileName] ?: return null
+            val width = overlay.widthN * rect.width
+            val height = width * bmp.height / bmp.width
+            Rect(origin.x, origin.y, origin.x + width, origin.y + height)
+        }
+    }
+}
+
+/** The ✕ badge, on the top-right corner of the selection. */
+private fun deleteHandle(bounds: Rect) = Offset(bounds.right, bounds.top)
+
+/** The resize grip, on the bottom-right corner. */
+private fun resizeHandle(bounds: Rect) = Offset(bounds.right, bounds.bottom)
+
 private fun DrawScope.drawOverlays(
     rect: Rect,
     overlays: List<Overlay>,
     selectedId: String?,
-    repo: DocumentRepository,
+    signatures: Map<String, ImageBitmap>,
+    handleRadius: Float,
 ) {
     val selectionStyle = StrokeStyle(2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
     overlays.forEach { overlay ->
@@ -404,40 +494,65 @@ private fun DrawScope.drawOverlays(
                     color = overlay.color.toInt()
                     textSize = overlay.sizeN * rect.height
                 }
-                val lines = overlay.text.split("\n")
                 drawIntoCanvas { canvas ->
                     var y = origin.y
-                    lines.forEach { line ->
+                    overlay.text.split("\n").forEach { line ->
                         canvas.nativeCanvas.drawText(line, origin.x, y, paint)
                         y += paint.textSize * 1.2f
                     }
                 }
-                if (overlay.id == selectedId) {
-                    val widest = lines.maxOf { paint.measureText(it) }
-                    drawRect(
-                        color = Color(0xFF55E39B),
-                        topLeft = Offset(origin.x - 8f, origin.y - paint.textSize - 8f),
-                        size = Size(widest + 16f, paint.textSize * (0.4f + 1.2f * lines.size) + 16f),
-                        style = selectionStyle,
-                    )
-                }
             }
 
             is Overlay.Signature -> {
-                val bmp = PageRenderer.decode(File(repo.signaturesDir, overlay.fileName), 600) ?: return@forEach
-                val targetW = overlay.widthN * rect.width
-                val targetH = targetW * bmp.height / bmp.width
+                val bmp = signatures[overlay.fileName] ?: return@forEach
+                val width = overlay.widthN * rect.width
+                val height = width * bmp.height / bmp.width
                 drawImage(
-                    image = bmp.asImageBitmap(),
+                    image = bmp,
                     dstOffset = IntOffset(origin.x.toInt(), origin.y.toInt()),
-                    dstSize = IntSize(targetW.toInt(), targetH.toInt()),
+                    dstSize = IntSize(width.toInt(), height.toInt()),
                 )
-                if (overlay.id == selectedId) {
-                    drawRect(Color(0xFF55E39B), origin, Size(targetW, targetH), style = selectionStyle)
-                }
             }
         }
+
+        if (overlay.id == selectedId) {
+            val bounds = overlayBounds(rect, overlay, signatures) ?: return@forEach
+            drawRect(
+                color = Color(0xFF55E39B),
+                topLeft = bounds.topLeft,
+                size = Size(bounds.width, bounds.height),
+                style = selectionStyle,
+            )
+            drawDeleteBadge(deleteHandle(bounds), handleRadius)
+            drawResizeGrip(resizeHandle(bounds), handleRadius)
+        }
     }
+}
+
+/** Tap to remove the overlay. Drawn on the border so it is always reachable. */
+private fun DrawScope.drawDeleteBadge(centre: Offset, radius: Float) {
+    drawCircle(Color(0xFFE53935), radius = radius, center = centre)
+    drawCircle(Color.White, radius = radius, center = centre, style = StrokeStyle(2f))
+    val arm = radius * 0.42f
+    drawLine(
+        Color.White, Offset(centre.x - arm, centre.y - arm), Offset(centre.x + arm, centre.y + arm),
+        strokeWidth = 3f, cap = StrokeCap.Round,
+    )
+    drawLine(
+        Color.White, Offset(centre.x + arm, centre.y - arm), Offset(centre.x - arm, centre.y + arm),
+        strokeWidth = 3f, cap = StrokeCap.Round,
+    )
+}
+
+/** Drag to scale. */
+private fun DrawScope.drawResizeGrip(centre: Offset, radius: Float) {
+    drawCircle(Color.White, radius = radius, center = centre)
+    drawCircle(Color(0xFF55E39B), radius = radius, center = centre, style = StrokeStyle(3f))
+    val arm = radius * 0.42f
+    drawLine(
+        Color(0xFF1B7A50), Offset(centre.x - arm, centre.y + arm), Offset(centre.x + arm, centre.y - arm),
+        strokeWidth = 3f, cap = StrokeCap.Round,
+    )
 }
 
 private fun DrawScope.drawCropQuad(rect: Rect, quad: Quad) {

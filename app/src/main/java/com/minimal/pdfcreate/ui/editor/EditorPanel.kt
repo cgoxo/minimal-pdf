@@ -61,6 +61,7 @@ import com.minimal.pdfcreate.data.FilterSettings
 import com.minimal.pdfcreate.data.Overlay
 import com.minimal.pdfcreate.imaging.PageRenderer
 import com.minimal.pdfcreate.ui.common.ColorPickerDialog
+import com.minimal.pdfcreate.ui.common.SWATCHES
 import com.minimal.pdfcreate.ui.theme.MinimalPdfTheme
 import java.io.File
 import java.io.FileOutputStream
@@ -146,20 +147,51 @@ private fun DrawPanel(
 ) {
     var picking by remember { mutableStateOf(false) }
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(
-                Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(brushColor)
-                    .border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                    .clickable { picking = true }
-            )
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // A labelled button, because a bare colour dot reads as decoration, not a control.
+            Button(onClick = { picking = true }) {
+                Box(
+                    Modifier
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(brushColor)
+                        .border(1.dp, Color.White, CircleShape)
+                )
+                Text("  Colour")
+            }
             OutlinedButton(onClick = onUndo, enabled = canUndo) {
                 Icon(Icons.Default.Undo, null)
                 Text("  Undo")
             }
             OutlinedButton(onClick = onClear, enabled = canUndo) { Text("Clear") }
+        }
+
+        // One-tap presets for the common cases; the button above covers everything else.
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SWATCHES.forEach { swatch ->
+                val isCurrent = swatch.toArgb() == brushColor.toArgb()
+                Box(
+                    Modifier
+                        .size(if (isCurrent) 30.dp else 26.dp)
+                        .clip(CircleShape)
+                        .background(swatch)
+                        .border(
+                            width = if (isCurrent) 3.dp else 1.dp,
+                            color = if (isCurrent) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outline,
+                            shape = CircleShape,
+                        )
+                        .clickable { onBrushColor(swatch) }
+                )
+            }
         }
         LabelledSlider("Brush size", brushWidth, 0.002f..0.05f, onBrushWidth)
     }

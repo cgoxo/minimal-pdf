@@ -15,11 +15,11 @@ import kotlin.math.max
  */
 object CaptureSaver {
 
-    private const val MAX_DIM = 2600
+    private const val MAX_DIM = 3200
 
     fun save(jpeg: ByteArray, rotationDegrees: Int, target: File): Boolean {
         val bitmap = decodeUpright(jpeg, rotationDegrees) ?: return false
-        FileOutputStream(target).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out) }
+        FileOutputStream(target).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out) }
         bitmap.recycle()
         return true
     }

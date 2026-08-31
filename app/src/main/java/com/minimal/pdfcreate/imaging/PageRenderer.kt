@@ -25,8 +25,8 @@ import kotlin.math.max
  */
 object PageRenderer {
 
-    const val EDIT_DIM = 1400
-    const val EXPORT_DIM = 2200
+    const val EDIT_DIM = 1600
+    const val EXPORT_DIM = 3000
     const val THUMB_DIM = 400
 
     fun decode(file: File, maxDim: Int): Bitmap? {

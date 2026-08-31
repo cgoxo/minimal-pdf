@@ -263,7 +263,7 @@ guessing. The maths is explained in `01-notes.md` in the Obsidian vault.
 overlay in `CameraScreen.kt` scales them into the preview area and draws them.
 
 **5. You press the shutter.** CameraX hands us JPEG bytes plus a rotation angle.
-`CaptureSaver.kt` decodes them downscaled to 2600 px, physically rotates the pixels upright,
+`CaptureSaver.kt` decodes them downscaled to 3200 px, physically rotates the pixels upright,
 and writes a JPEG into the app's private folder. (Cameras normally record rotation as EXIF
 metadata *without* rotating the pixels, and `BitmapFactory` ignores EXIF — that's the classic
 "why is my scan sideways" bug, killed here once and for all.)
@@ -344,9 +344,9 @@ Five tabs over a single drawing surface:
 | Tab | Does |
 |---|---|
 | **Filter** | Original / Greyscale / B&W / Document, with brightness, contrast, saturation and threshold sliders |
-| **Draw** | Freehand brush: colour picker (hue + saturation/value square + swatches), size slider, undo, clear |
-| **Text** | Add a text box, drag it, change its size and colour |
-| **Sign** | Two ways to get a signature: **Draw** it on a pad with your finger, or **Scan from paper** — photograph a signature written on paper and the app lifts the ink off the page. Either way it is saved as a reusable transparent PNG that can be dropped on any page and resized |
+| **Draw** | Freehand brush: a **Colour** button opening a full hue + saturation/value picker, a row of one-tap preset swatches, size slider, undo, clear |
+| **Text** | Add a text box, drag it, change its size and colour. Tap it to select: a dashed frame appears with a red **✕** on the top-right corner to delete it and a green **grip** on the bottom-right to resize by dragging |
+| **Sign** | Same on-page frame — drag to move, corner grip to resize, ✕ to delete. Two ways to get a signature: **Draw** it on a pad with your finger, or **Scan from paper** — photograph a signature written on paper and the app lifts the ink off the page. Either way it is saved as a reusable transparent PNG that can be dropped on any page and resized |
 | **Crop** | Four draggable corner handles, plus auto-detect and rotate |
 
 **Scanning a signature** (`SignatureScanDialog.kt` + `imaging/SignatureExtractor.kt`) is worth
@@ -369,6 +369,11 @@ Scroll and pinch-zoom, with a share button.
 *Concepts to notice:* `PdfRenderer` allows only one open page at a time and is not thread
 safe, so access is serialised with a `Mutex`; pages are rasterised lazily as they scroll into
 view rather than all at once.
+
+Pages are rendered to **the pixels actually on screen** — the window width times a quality
+factor — rather than a fixed guess, and zoom is quantised into three tiers so that pinching in
+re-rasterises once per tier instead of on every frame. That is what keeps text sharp when you
+zoom rather than showing you magnified mush.
 
 ---
 
@@ -396,7 +401,11 @@ Three things fall out of this for free:
 `width × height × 4` bytes. Decode a 12 MP photo naively and you've allocated ~48 MB for one
 image. `PageRenderer.decode` uses `inSampleSize` (decode every Nth pixel — cheap, done inside
 the decoder) to get roughly the right size, then scales precisely. Three size constants exist
-for this reason: `THUMB_DIM 400`, `EDIT_DIM 1400`, `EXPORT_DIM 2200`.
+for this reason: `THUMB_DIM 400`, `EDIT_DIM 1600`, `EXPORT_DIM 3000`. The capture itself is
+kept at up to 3200 px (`CaptureSaver.MAX_DIM`), so the export is limited by the photo rather
+than by the pipeline. Those numbers are the quality/memory dial: raising them sharpens the
+output and costs RAM in exactly the ratio above. The manifest sets `android:largeHeap="true"`
+to buy headroom for them.
 
 ### 4. Slow work never runs on the main thread
 

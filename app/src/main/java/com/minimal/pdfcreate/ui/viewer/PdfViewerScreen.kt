@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import com.minimal.pdfcreate.AppContainer
 import com.minimal.pdfcreate.data.PdfStore
@@ -100,6 +101,16 @@ fun PdfViewerScreen(docId: String, onBack: () -> Unit) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
+    // Rasterise to the pixels actually on screen, not a fixed guess. Zoom is quantised into
+    // three tiers so pinching re-renders once per tier instead of on every frame.
+    val windowWidthPx = LocalWindowInfo.current.containerSize.width.coerceAtLeast(720)
+    val qualityTier = when {
+        scale < 1.5f -> 1.5f
+        scale < 3f -> 2.5f
+        else -> 3.5f
+    }
+    val renderWidthPx = (windowWidthPx * qualityTier).toInt().coerceIn(1080, 2800)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -149,16 +160,15 @@ fun PdfViewerScreen(docId: String, onBack: () -> Unit) {
                 },
         ) {
             items(source.pageCount) { index ->
-                PdfPage(source, index)
+                PdfPage(source, index, renderWidthPx)
             }
         }
     }
 }
 
 @Composable
-private fun PdfPage(source: PdfSource, index: Int) {
-    val widthPx = 1200
-    val bitmap by produceState<Bitmap?>(initialValue = null, source, index) {
+private fun PdfPage(source: PdfSource, index: Int, widthPx: Int) {
+    val bitmap by produceState<Bitmap?>(initialValue = null, source, index, widthPx) {
         value = source.render(index, widthPx)
     }
     Box(
