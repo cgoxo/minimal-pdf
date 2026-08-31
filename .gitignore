@@ -16,3 +16,7 @@ local.properties
 
 # macOS
 .DS_Store
+
+# Locally staged release artifacts
+dist/
+*.apk
