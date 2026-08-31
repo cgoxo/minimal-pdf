@@ -68,5 +68,3 @@ platform rather than handed to a third-party SDK — **no OpenCV, no ML Kit, no 
 | PDF writing | `android.graphics.pdf.PdfDocument` |
 | PDF viewing | `android.graphics.pdf.PdfRenderer` |
 | Camera | CameraX |
-
-It exists to learn Android development, so the code is meant to be read.
