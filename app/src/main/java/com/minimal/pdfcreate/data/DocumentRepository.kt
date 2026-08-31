@@ -37,9 +37,17 @@ class DocumentRepository(context: Context) {
     fun refresh() {
         val loaded = root.listFiles { f -> f.isDirectory }
             ?.mapNotNull { dir -> runCatching { readManifest(dir) }.getOrNull() }
-            ?.sortedByDescending { it.updatedAt }
             ?: emptyList()
-        _documents.value = loaded
+
+        // A document only ever exists once it has a page (the camera creates it on the first
+        // capture), so anything with zero pages is abandoned and gets swept up here rather
+        // than left on the home screen for the user to tidy by hand.
+        val (empty, real) = loaded.partition { it.pages.isEmpty() }
+        empty.forEach { doc ->
+            doc.pdfFileName?.let { runCatching { PdfStore.delete(appContext, it) } }
+            docDir(doc.id).deleteRecursively()
+        }
+        _documents.value = real.sortedByDescending { it.updatedAt }
     }
 
     private fun readManifest(dir: File): ScanDocument? {
@@ -64,11 +72,12 @@ class DocumentRepository(context: Context) {
     fun signatures(): List<File> =
         signaturesDir.listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
 
-    fun createDocument(name: String = defaultName()): ScanDocument {
-        val doc = ScanDocument(name = name)
-        save(doc)
-        return doc
-    }
+    /**
+     * The document for [docId], or a fresh unsaved one. Nothing touches disk until the caller
+     * saves it *with* a page — see [refresh].
+     */
+    fun getOrNew(docId: String): ScanDocument =
+        get(docId) ?: ScanDocument(id = docId, name = defaultName())
 
     fun save(doc: ScanDocument) {
         val updated = doc.copy(updatedAt = System.currentTimeMillis())
@@ -106,7 +115,7 @@ class DocumentRepository(context: Context) {
 
         fun defaultName(): String {
             val fmt = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
-            return "Scan_" + fmt.format(java.util.Date())
+            return "Scanned_" + fmt.format(java.util.Date())
         }
     }
 }

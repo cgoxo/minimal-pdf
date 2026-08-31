@@ -176,7 +176,15 @@ fun ReviewScreen(
                                 IconButton(
                                     onClick = {
                                         repo.deletePage(docId, page.id)
-                                        doc = repo.get(docId)
+                                        val remaining = repo.get(docId)
+                                        if (remaining == null || remaining.pages.isEmpty()) {
+                                            // Nothing left to review, and an empty document is
+                                            // not something the user should have to delete.
+                                            repo.delete(docId)
+                                            onBack()
+                                        } else {
+                                            doc = remaining
+                                        }
                                     },
                                     modifier = Modifier.size(36.dp),
                                 ) { Icon(Icons.Default.Delete, "Delete page") }

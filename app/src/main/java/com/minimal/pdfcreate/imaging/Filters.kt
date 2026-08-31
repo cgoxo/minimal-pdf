@@ -46,6 +46,24 @@ object Filters {
         return cm.array
     }
 
+    /**
+     * Runs a single colour through a ColorMatrix by hand.
+     *
+     * The eyedropper reads the *source* bitmap, but tone-only modes are previewed by handing
+     * the matrix to the GPU at draw time — so without this the sampled colour would not match
+     * the colour on screen.
+     */
+    fun applyMatrixToColor(argb: Int, m: FloatArray): Int {
+        val a = ((argb shr 24) and 0xFF).toFloat()
+        val r = ((argb shr 16) and 0xFF).toFloat()
+        val g = ((argb shr 8) and 0xFF).toFloat()
+        val b = (argb and 0xFF).toFloat()
+        fun channel(o: Int) =
+            (m[o] * r + m[o + 1] * g + m[o + 2] * b + m[o + 3] * a + m[o + 4])
+                .toInt().coerceIn(0, 255)
+        return (0xFF shl 24) or (channel(0) shl 16) or (channel(5) shl 8) or channel(10)
+    }
+
     /** Applies the full filter (tone matrix + any per-pixel mode) into a new bitmap. */
     fun apply(src: Bitmap, s: FilterSettings): Bitmap {
         val toned = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)

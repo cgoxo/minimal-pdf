@@ -88,7 +88,7 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { onCreate(repo.createDocument().id) }) {
+            FloatingActionButton(onClick = { onCreate(java.util.UUID.randomUUID().toString()) }) {
                 Icon(Icons.Default.Add, contentDescription = "New PDF")
             }
         }

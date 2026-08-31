@@ -21,7 +21,6 @@ object PdfExporter {
 
     private const val A4_WIDTH_PT = 595
     private const val A4_HEIGHT_PT = 842
-    private const val MARGIN_PT = 18
 
     fun export(context: Context, repo: DocumentRepository, doc: ScanDocument): Uri {
         require(doc.pages.isNotEmpty()) { "Refusing to export a document with no pages" }
@@ -29,22 +28,26 @@ object PdfExporter {
         try {
             doc.pages.forEachIndexed { index, page ->
                 val bitmap = PageRenderer.render(repo, doc.id, page, PageRenderer.EXPORT_DIM)
-                val landscape = bitmap != null && bitmap.width > bitmap.height
-                val pageWidth = if (landscape) A4_HEIGHT_PT else A4_WIDTH_PT
-                val pageHeight = if (landscape) A4_WIDTH_PT else A4_HEIGHT_PT
+
+                // The page is cut to the *scan's* proportions rather than forced onto a fixed
+                // A4 sheet, and the image is drawn edge to edge. Anything else would frame the
+                // scan in white, which is exactly what a scanner should never do.
+                val (pageWidth, pageHeight) = if (bitmap == null) {
+                    A4_WIDTH_PT to A4_HEIGHT_PT
+                } else {
+                    val scale = minOf(
+                        A4_WIDTH_PT.toFloat() / bitmap.width,
+                        A4_HEIGHT_PT.toFloat() / bitmap.height,
+                    )
+                    (bitmap.width * scale).toInt().coerceAtLeast(1) to
+                        (bitmap.height * scale).toInt().coerceAtLeast(1)
+                }
 
                 val info = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
                 val pdfPage = pdf.startPage(info)
                 if (bitmap != null) {
-                    val availW = pageWidth - 2 * MARGIN_PT
-                    val availH = pageHeight - 2 * MARGIN_PT
-                    val scale = minOf(availW.toFloat() / bitmap.width, availH.toFloat() / bitmap.height)
-                    val drawW = (bitmap.width * scale).toInt()
-                    val drawH = (bitmap.height * scale).toInt()
-                    val left = (pageWidth - drawW) / 2
-                    val top = (pageHeight - drawH) / 2
                     pdfPage.canvas.drawBitmap(
-                        bitmap, null, Rect(left, top, left + drawW, top + drawH),
+                        bitmap, null, Rect(0, 0, pageWidth, pageHeight),
                         Paint(Paint.FILTER_BITMAP_FLAG)
                     )
                     bitmap.recycle()

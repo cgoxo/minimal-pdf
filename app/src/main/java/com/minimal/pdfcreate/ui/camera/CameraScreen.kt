@@ -2,6 +2,7 @@ package com.minimal.pdfcreate.ui.camera
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -145,6 +146,13 @@ fun CameraScreen(docId: String, onDone: () -> Unit, onBack: () -> Unit) {
         }, ContextCompat.getMainExecutor(context))
     }
 
+    // Same cleanup whichever way the user leaves: arrow, or the system back gesture.
+    fun leave() {
+        if (pages.isEmpty()) repo.delete(docId)
+        onBack()
+    }
+    BackHandler { leave() }
+
     fun capture() {
         if (capturing) return
         capturing = true
@@ -159,14 +167,14 @@ fun CameraScreen(docId: String, onDone: () -> Unit, onBack: () -> Unit) {
                 val file = repo.newImageFile(docId)
                 val ok = CaptureSaver.save(jpeg, rotation, file)
                 if (ok) {
-                    val doc = repo.get(docId)
-                    if (doc != null) {
-                        val updated = doc.copy(
-                            pages = doc.pages + Page(imageName = file.name, crop = quadAtCapture)
-                        )
-                        repo.save(updated)
-                        pages = updated.pages
-                    }
+                    // The document is born here, with its first page, so backing out of an
+                    // empty camera session leaves nothing behind to tidy up.
+                    val doc = repo.getOrNew(docId)
+                    val updated = doc.copy(
+                        pages = doc.pages + Page(imageName = file.name, crop = quadAtCapture)
+                    )
+                    repo.save(updated)
+                    pages = updated.pages
                 }
                 capturing = false
             }
@@ -212,11 +220,7 @@ fun CameraScreen(docId: String, onDone: () -> Unit, onBack: () -> Unit) {
                 .align(Alignment.TopStart)
                 .statusBarsPadding()
                 .padding(16.dp)
-                .clickable {
-                    // A document the user backed out of before capturing anything is noise.
-                    if (pages.isEmpty()) repo.delete(docId)
-                    onBack()
-                },
+                .clickable { leave() },
         )
 
         Row(

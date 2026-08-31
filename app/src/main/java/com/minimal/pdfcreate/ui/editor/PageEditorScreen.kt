@@ -120,6 +120,7 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
     var textColor by remember { mutableStateOf(Color(0xFF1E88E5)) }
     var textSize by remember { mutableFloatStateOf(0.05f) }
     var liveStroke by remember { mutableStateOf<List<PointN>>(emptyList()) }
+    var eyedropper by remember { mutableStateOf(false) }
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
@@ -220,6 +221,8 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                             onBrushColor = { brushColor = it },
                             brushWidth = brushWidth,
                             onBrushWidth = { brushWidth = it },
+                            eyedropperOn = eyedropper,
+                            onToggleEyedropper = { eyedropper = !eyedropper },
                             canUndo = strokes.isNotEmpty(),
                             onUndo = { strokes = strokes.dropLast(1) },
                             onClearStrokes = { strokes = emptyList() },
@@ -305,6 +308,24 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
             val rect = fittedRect(canvasSize, bitmap.width, bitmap.height)
 
             val gestures = when (tab) {
+                // Eyedropper mode borrows the draw surface: one tap samples and switches back.
+                EditorTab.DRAW if eyedropper -> Modifier.pointerInput(rect, bitmap) {
+                    detectTapGestures { p ->
+                        val n = rect.normalise(p)
+                        val px = (n.x * bitmap.width).toInt().coerceIn(0, bitmap.width - 1)
+                        val py = (n.y * bitmap.height).toInt().coerceIn(0, bitmap.height - 1)
+                        val sampled = bitmap.getPixel(px, py)
+                        brushColor = Color(
+                            if (pixelFiltered == null) {
+                                Filters.applyMatrixToColor(sampled, Filters.matrixValues(filter))
+                            } else {
+                                sampled
+                            }
+                        )
+                        eyedropper = false
+                    }
+                }
+
                 EditorTab.DRAW -> Modifier.pointerInput(brushColor, brushWidth, rect) {
                     detectDragGestures(
                         onDragStart = { p -> liveStroke = listOf(rect.normalise(p)) },

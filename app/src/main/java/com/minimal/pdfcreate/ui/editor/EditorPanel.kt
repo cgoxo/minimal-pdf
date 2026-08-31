@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Colorize
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -77,6 +78,8 @@ fun EditorPanel(
     onBrushColor: (Color) -> Unit,
     brushWidth: Float,
     onBrushWidth: (Float) -> Unit,
+    eyedropperOn: Boolean,
+    onToggleEyedropper: () -> Unit,
     canUndo: Boolean,
     onUndo: () -> Unit,
     onClearStrokes: () -> Unit,
@@ -95,7 +98,10 @@ fun EditorPanel(
 ) {
     when (tab) {
         EditorTab.FILTER -> FilterPanel(filter, onFilter)
-        EditorTab.DRAW -> DrawPanel(brushColor, onBrushColor, brushWidth, onBrushWidth, canUndo, onUndo, onClearStrokes)
+        EditorTab.DRAW -> DrawPanel(
+            brushColor, onBrushColor, brushWidth, onBrushWidth,
+            eyedropperOn, onToggleEyedropper, canUndo, onUndo, onClearStrokes,
+        )
         EditorTab.TEXT -> TextPanel(textColor, onTextColor, textSize, onTextSize, onAddText, selected, onUpdateOverlay, onDeleteOverlay)
         EditorTab.SIGN -> SignPanel(onAddSignature, selected, onUpdateOverlay, onDeleteOverlay)
         EditorTab.CROP -> CropPanel(onAutoDetect, onResetCrop, onRotate)
@@ -175,6 +181,8 @@ private fun DrawPanel(
     onBrushColor: (Color) -> Unit,
     brushWidth: Float,
     onBrushWidth: (Float) -> Unit,
+    eyedropperOn: Boolean,
+    onToggleEyedropper: () -> Unit,
     canUndo: Boolean,
     onUndo: () -> Unit,
     onClear: () -> Unit,
@@ -196,6 +204,18 @@ private fun DrawPanel(
                         .border(1.dp, Color.White, CircleShape)
                 )
                 Text("  Colour")
+            }
+            // Eyedropper: take the brush colour from the page itself.
+            if (eyedropperOn) {
+                Button(onClick = onToggleEyedropper) {
+                    Icon(Icons.Default.Colorize, null)
+                    Text("  Tap the page")
+                }
+            } else {
+                OutlinedButton(onClick = onToggleEyedropper) {
+                    Icon(Icons.Default.Colorize, null)
+                    Text("  Pick from image")
+                }
             }
             OutlinedButton(onClick = onUndo, enabled = canUndo) {
                 Icon(Icons.Default.Undo, null)
@@ -610,6 +630,8 @@ private fun DrawPanelPreview() = PanelPreview {
         onBrushColor = {},
         brushWidth = 0.012f,
         onBrushWidth = {},
+        eyedropperOn = false,
+        onToggleEyedropper = {},
         canUndo = true,
         onUndo = {},
         onClear = {},
