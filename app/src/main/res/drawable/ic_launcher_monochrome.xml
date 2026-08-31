@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Themed-icon layer: the system tints this flat, so the magnifier has to be a hole in the
-     sheet (fillType evenOdd) rather than a lighter shape drawn on top of it. -->
+<!-- Themed-icon layer: the same magnifying glass as a flat silhouette, since the system
+     tints this layer a single colour. The lens is a hole (fillType evenOdd). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -9,8 +9,8 @@
     <path
         android:fillColor="#FFFFFF"
         android:fillType="evenOdd"
-        android:pathData="M46,22h24a6,6 0 0 1 6,6v52a6,6 0 0 1 -6,6h-32a6,6 0 0 1 -6,-6v-44zM54,41a13,13 0 1 0 0,26a13,13 0 1 0 0,-26z" />
+        android:pathData="M49,25a25,25 0 1 0 0,50a25,25 0 1 0 0,-50zM49,34a16,16 0 1 1 0,32a16,16 0 1 1 0,-32z" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M63,63l9,9a3,3 0 0 1 -4,4l-9,-9z" />
+        android:pathData="M66.5,62.5l17,17a4.5,4.5 0 0 1 -6.4,6.4l-17,-17z" />
 </vector>
