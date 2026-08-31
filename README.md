@@ -133,8 +133,10 @@ specifically. Version 9.3.2 here. Since AGP 9 it compiles Kotlin itself, which i
 won't find a `kotlin-android` plugin in our build file.
 
 **APK** — the installable app file. `app/build/outputs/apk/debug/app-debug.apk`.
-The debug APK is fat (~76 MB) because it carries debugging and Compose tooling; a release
-build with shrinking enabled is a fraction of that.
+The debug APK is fat (~73 MB) because it carries debugging and Compose tooling and is never
+shrunk. `./gradlew assembleRelease` produces a signed, R8-shrunk build of **under 4 MB** — most
+of the difference is the thousands of unused vectors in `material-icons-extended` being
+dropped. Keep rules for the JSON persistence layer live in `app/proguard-rules.pro`.
 
 **SDK / API level** — every Android version has a number. Android 10 = API 29,
 Android 15 = API 35, and so on. Three settings in `app/build.gradle.kts` use them:
@@ -554,9 +556,12 @@ Honest list, so nothing surprises you:
   dark marks are in the frame, auto-trimmed to their bounding box. Photograph a page with a
   paragraph on it and you'll get the paragraph as a "signature". Frame just the signature.
 - **Sorting, search, folders, multi-select** — none of it. Deliberately minimal.
-- **The debug APK is ~76 MB.** That's debug tooling, not the app. Enabling shrinking in the
-  release build (`optimization { enable = true }` in `app/build.gradle.kts`) will cut it
-  dramatically.
+- **Release builds need a keystore.** `app/build.gradle.kts` reads `keystore.properties` from
+  the project root, which is gitignored along with `*.jks` — so a fresh clone builds and runs
+  debug fine, but cannot produce a signed release until you generate your own key:
+  `keytool -genkeypair -keystore ~/keystores/minimal-pdf-release.jks -alias minimalpdf
+  -keyalg RSA -keysize 4096 -validity 10000`. Losing that key means never being able to ship
+  an update that upgrades an existing install.
 - **`minSdk 29`** means Android 9 and older can't install it.
 
 ---

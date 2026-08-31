@@ -20,3 +20,8 @@ local.properties
 # Locally staged release artifacts
 dist/
 *.apk
+
+# Signing secrets
+keystore.properties
+*.jks
+*.keystore
