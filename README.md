@@ -10,6 +10,10 @@ all inside the app.
 Android platform instead of being handed off to a big third-party library. The code is
 meant to be read.
 
+**[⬇ Download the latest APK](https://github.com/cgoxo/minimal-pdf/releases/latest)** —
+3.7 MB, Android 10 or newer. Android will warn that it comes from an unknown source; that is
+expected for anything not installed from the Play Store.
+
 If you have never built an Android app before, start at [Part 0](#part-0--run-it-first)
 and read this file top to bottom. It assumes no prior Android knowledge.
 
