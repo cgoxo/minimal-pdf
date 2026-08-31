@@ -161,6 +161,11 @@ private fun FilterPanel(filter: FilterSettings, onFilter: (FilterSettings) -> Un
                 }
             }
         }
+        if (filter.mode != FilterMode.BW) {
+            LabelledSlider("Enhance (sharpen)", filter.sharpen, 0f..1f) {
+                onFilter(filter.copy(sharpen = it))
+            }
+        }
     }
 }
 
@@ -245,16 +250,24 @@ private fun TextPanel(
     val selectedText = selected as? Overlay.Text
 
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Button(onClick = { typing = true }) { Text("Add text") }
-            Box(
-                Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(selectedText?.let { Color(it.color.toInt()) } ?: textColor)
-                    .border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                    .clickable { picking = true }
-            )
+            // Same labelled control as the Draw tab, for the same reason: a bare dot does not
+            // look like something you can press.
+            Button(onClick = { picking = true }) {
+                Box(
+                    Modifier
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(selectedText?.let { Color(it.color.toInt()) } ?: textColor)
+                        .border(1.dp, Color.White, CircleShape)
+                )
+                Text("  Colour")
+            }
             if (selectedText != null) {
                 OutlinedButton(onClick = { onDelete(selectedText.id) }) {
                     Icon(Icons.Default.Delete, null)

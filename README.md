@@ -343,7 +343,7 @@ Five tabs over a single drawing surface:
 
 | Tab | Does |
 |---|---|
-| **Filter** | Original / Greyscale / B&W / Document. Original and Greyscale get brightness, contrast and saturation; **B&W and Document get a single "Ink sensitivity" knob** instead — they are ink decisions, not tone curves, so three sliders was two too many |
+| **Filter** | Original / Greyscale / B&W / Document. Original and Greyscale get brightness, contrast and saturation; **B&W and Document get a single "Ink sensitivity" knob** instead — they are ink decisions, not tone curves, so three sliders was two too many. Every mode except B&W also has **Enhance (sharpen)** |
 | **Draw** | Freehand brush: a **Colour** button opening a full hue + saturation/value picker, a row of one-tap preset swatches, size slider, undo, clear |
 | **Text** | Add a text box, drag it, change its size and colour. Tap it to select: a dashed frame appears with a red **✕** on the top-right corner to delete it and a green **grip** on the bottom-right to resize by dragging |
 | **Sign** | Same on-page frame — drag to move, corner grip to resize, ✕ to delete — plus a rotation slider and ±90° buttons. Saved signatures can be deleted from the strip with their own ✕. Two ways to get a signature: **Draw** it on a pad with your finger, or **Scan from paper** — photograph a signature written on paper and the app lifts the ink off the page. Either way it is saved as a reusable transparent PNG that can be dropped on any page and resized |
@@ -357,6 +357,9 @@ of the strokes are preserved rather than turned into a fax. After the shot you d
 actually the signature — everything outside it is dimmed and discarded, which is what stops
 other writing on the page coming along too. The result is auto-trimmed to the ink and
 previewed live as you adjust the box and the sensitivity slider, before anything is saved.
+
+**Pinch with two fingers to zoom and pan the page** while editing; one finger keeps drawing,
+cropping and dragging overlays. A reset control appears in the top bar while zoomed.
 
 *Concepts to notice:* one `Canvas` composable draws the image *and* the annotations in the
 same coordinate space; `pointerInput` + `detectDragGestures` for the interactions;

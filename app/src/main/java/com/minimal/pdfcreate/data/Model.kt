@@ -32,6 +32,8 @@ data class FilterSettings(
     val contrast: Float = 1f,
     val saturation: Float = 1f,
     val threshold: Float = 0.5f,
+    /** Unsharp-mask strength, 0f = off. Makes faint pen and small print legible. */
+    val sharpen: Float = 0f,
 )
 
 /** One freehand brush stroke. Width is normalised against the image width. */

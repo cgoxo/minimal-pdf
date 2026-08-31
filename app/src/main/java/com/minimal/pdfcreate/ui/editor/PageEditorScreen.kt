@@ -4,6 +4,12 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -114,6 +120,8 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
     var textColor by remember { mutableStateOf(Color(0xFF1E88E5)) }
     var textSize by remember { mutableFloatStateOf(0.05f) }
     var liveStroke by remember { mutableStateOf<List<PointN>>(emptyList()) }
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
 
     // Signature PNGs, decoded once. Previously every redraw decoded them from disk, which
     // made dragging one feel like wading through treacle.
@@ -169,7 +177,9 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
     // modes are previewed for free by handing a ColorFilter to drawImage.
     val pixelFiltered by produceState<Bitmap?>(initialValue = null, baseBitmap, filter) {
         val base = baseBitmap
-        value = if (base == null || filter.mode == FilterMode.ORIGINAL || filter.mode == FilterMode.GRAYSCALE) {
+        val toneOnly = (filter.mode == FilterMode.ORIGINAL || filter.mode == FilterMode.GRAYSCALE) &&
+            filter.sharpen <= 0.01f
+        value = if (base == null || toneOnly) {
             null
         } else {
             withContext(Dispatchers.Default) { runCatching { Filters.apply(base, filter) }.getOrNull() }
@@ -189,6 +199,11 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                 title = { Text("Edit page") },
                 navigationIcon = { IconButton(onClick = { save(); onBack() }) { Icon(Icons.Default.ArrowBack, "Back") } },
                 actions = {
+                    if (zoom > 1.01f) {
+                        IconButton(onClick = { zoom = 1f; pan = Offset.Zero }) {
+                            Icon(Icons.Default.ZoomOutMap, "Reset zoom")
+                        }
+                    }
                     IconButton(onClick = { save(); onBack() }) { Icon(Icons.Default.Check, "Done") }
                 },
             )
@@ -407,7 +422,32 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                     .fillMaxSize()
                     // Belt and braces: tells the system this area owns its edge gestures.
                     .systemGestureExclusion()
+                    .graphicsLayer {
+                        scaleX = zoom; scaleY = zoom
+                        translationX = pan.x; translationY = pan.y
+                    }
                     .then(gestures)
+                    // Two fingers pan and zoom; one finger is left alone for drawing, cropping
+                    // and dragging overlays. Placed last so it sees the event first and can
+                    // claim multi-touch before the single-touch detectors above.
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            do {
+                                val event = awaitPointerEvent()
+                                if (event.changes.size >= 2) {
+                                    zoom = (zoom * event.calculateZoom()).coerceIn(1f, 6f)
+                                    val panLimit = size.width * (zoom - 1f) / 2f
+                                    val next = if (zoom <= 1.01f) Offset.Zero else pan + event.calculatePan()
+                                    pan = Offset(
+                                        next.x.coerceIn(-panLimit, panLimit),
+                                        next.y.coerceIn(-size.height * (zoom - 1f) / 2f, size.height * (zoom - 1f) / 2f),
+                                    )
+                                    event.changes.forEach { it.consume() }
+                                }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
             ) {
                 canvasSize = size
                 val r = fittedRect(size, bitmap.width, bitmap.height)
