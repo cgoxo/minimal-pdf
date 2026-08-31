@@ -62,6 +62,8 @@ sealed interface Overlay {
         val fileName: String,
         override val posN: PointN,
         val widthN: Float = 0.35f,
+        /** Clockwise degrees, about the centre of the placed signature. */
+        val rotation: Float = 0f,
     ) : Overlay
 }
 

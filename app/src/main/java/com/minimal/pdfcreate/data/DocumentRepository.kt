@@ -23,6 +23,7 @@ class DocumentRepository(context: Context) {
         encodeDefaults = true
     }
 
+    private val appContext = context.applicationContext
     private val root = File(context.filesDir, "docs").apply { mkdirs() }
     val signaturesDir = File(context.filesDir, "signatures").apply { mkdirs() }
 
@@ -85,7 +86,19 @@ class DocumentRepository(context: Context) {
         val doc = get(docId) ?: return
         val page = doc.page(pageId) ?: return
         imageFile(docId, page.imageName).delete()
-        save(doc.copy(pages = doc.pages.filterNot { it.id == pageId }))
+        val remaining = doc.pages.filterNot { it.id == pageId }
+        if (remaining.isEmpty() && doc.pdfFileName != null) {
+            // A zero-page PDF is not a document, it is a bug waiting to be opened. Retire the
+            // exported file and let the document fall back to being a draft.
+            PdfStore.delete(appContext, doc.pdfFileName)
+            save(doc.copy(pages = remaining, pdfFileName = null))
+        } else {
+            save(doc.copy(pages = remaining))
+        }
+    }
+
+    fun deleteSignature(file: File) {
+        file.delete()
     }
 
     companion object {

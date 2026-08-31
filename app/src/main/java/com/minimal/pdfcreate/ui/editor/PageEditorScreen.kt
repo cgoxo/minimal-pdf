@@ -3,6 +3,7 @@ package com.minimal.pdfcreate.ui.editor
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +55,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.Stroke as StrokeStyle
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -76,7 +79,9 @@ import com.minimal.pdfcreate.ui.common.fittedRect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.math.abs
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 enum class EditorTab(val label: String) { FILTER("Filter"), DRAW("Draw"), TEXT("Text"), SIGN("Sign"), CROP("Crop") }
 
@@ -124,6 +129,12 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
         }
     }
 
+    // Read through these inside gestures instead of keying on them: a pointerInput whose key
+    // changes mid-gesture is torn down and restarted, which is exactly why dragging an overlay
+    // stopped working once the list started updating on every move event.
+    val currentOverlays by rememberUpdatedState(overlays)
+    val currentSelection by rememberUpdatedState(selectedOverlay)
+
     val density = LocalDensity.current
     val handleRadius = with(density) { 13.dp.toPx() }
     val handleHit = with(density) { 30.dp.toPx() }
@@ -137,10 +148,13 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
         repo.save(doc.replacePage(currentPage()))
     }
 
-    // The raw capture: the crop tab must place corners on the un-cropped frame.
-    val sourceBitmap by produceState<Bitmap?>(initialValue = null, docId, pageId) {
+    // The un-cropped capture *after* rotation — the space the crop quad is stored in. Keyed on
+    // rotation, so tapping rotate re-renders the crop editor immediately instead of only
+    // showing up once you switch tabs.
+    val cropSource by produceState<Bitmap?>(initialValue = null, docId, pageId, rotation) {
         value = withContext(Dispatchers.Default) {
             PageRenderer.decode(repo.imageFile(docId, original.imageName), PageRenderer.EDIT_DIM)
+                ?.let { PageRenderer.rotate(it, rotation) }
         }
     }
 
@@ -164,7 +178,7 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
 
     val showCrop = tab == EditorTab.CROP
     val displayed = when {
-        showCrop -> sourceBitmap
+        showCrop -> cropSource
         pixelFiltered != null -> pixelFiltered
         else -> baseBitmap
     }
@@ -223,9 +237,13 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                                 overlays = overlays.filterNot { it.id == id }
                                 selectedOverlay = null
                             },
-                            onAutoDetect = { sourceBitmap?.let { crop = EdgeDetector.detect(it) ?: Quad.FULL } },
+                            onAutoDetect = { cropSource?.let { crop = EdgeDetector.detect(it) ?: Quad.FULL } },
                             onResetCrop = { crop = Quad.FULL },
-                            onRotate = { delta -> rotation = ((rotation + delta) % 360 + 360) % 360 },
+                            onRotate = { delta ->
+                                // The crop lives in the rotated frame, so it has to turn with it.
+                                rotation = ((rotation + delta) % 360 + 360) % 360
+                                crop = crop?.let { EdgeDetector.rotateQuad(it, delta) }
+                            },
                         )
                     }
                 }
@@ -257,7 +275,9 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
             Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .background(Color(0xFF2A2A2A)),
+                .background(Color(0xFF2A2A2A))
+                // Inset the page so corner handles never sit under the system back-swipe strip.
+                .padding(horizontal = 20.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
             val bitmap = displayed
@@ -288,40 +308,39 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                 }
 
                 EditorTab.TEXT, EditorTab.SIGN -> Modifier
-                    .pointerInput(overlays, selectedOverlay, rect, signatures.size) {
+                    .pointerInput(rect) {
                         detectTapGestures { p ->
-                            val selected = overlays.firstOrNull { it.id == selectedOverlay }
+                            val selected = currentOverlays.firstOrNull { it.id == currentSelection }
                             val bounds = selected?.let { overlayBounds(rect, it, signatures) }
-                            // The ✕ badge sits on the selection border, so check it first.
-                            if (selected != null && bounds != null &&
-                                (deleteHandle(bounds) - p).getDistance() < handleHit
-                            ) {
-                                overlays = overlays.filterNot { it.id == selected.id }
-                                selectedOverlay = null
-                                return@detectTapGestures
+                            if (selected != null && bounds != null) {
+                                val local = unrotate(p, bounds.center, selected.rotationDegrees())
+                                // The ✕ badge sits on the selection border, so check it first.
+                                if ((deleteHandle(bounds) - local).getDistance() < handleHit) {
+                                    overlays = overlays.filterNot { it.id == selected.id }
+                                    selectedOverlay = null
+                                    return@detectTapGestures
+                                }
                             }
-                            selectedOverlay = overlays
-                                .lastOrNull { overlayBounds(rect, it, signatures)?.contains(p) == true }
-                                ?.id
-                                ?: overlays
+                            selectedOverlay = currentOverlays.lastOrNull { hits(rect, it, signatures, p) }?.id
+                                ?: currentOverlays
                                     .minByOrNull { (rect.denormalise(it.posN) - p).getDistance() }
                                     ?.takeIf { (rect.denormalise(it.posN) - p).getDistance() < handleHit * 2 }
                                     ?.id
                         }
                     }
-                    .pointerInput(overlays, selectedOverlay, rect, signatures.size) {
+                    .pointerInput(rect) {
                         var mode = 0 // 0 = none, 1 = move, 2 = resize
                         detectDragGestures(
                             onDragStart = { p ->
-                                val selected = overlays.firstOrNull { it.id == selectedOverlay }
+                                val selected = currentOverlays.firstOrNull { it.id == currentSelection }
                                 val bounds = selected?.let { overlayBounds(rect, it, signatures) }
+                                val local = if (bounds == null) p
+                                    else unrotate(p, bounds.center, selected.rotationDegrees())
                                 mode = when {
-                                    bounds != null && (resizeHandle(bounds) - p).getDistance() < handleHit -> 2
-                                    bounds != null && bounds.contains(p) -> 1
+                                    bounds != null && (resizeHandle(bounds) - local).getDistance() < handleHit -> 2
+                                    bounds != null && bounds.contains(local) -> 1
                                     else -> {
-                                        val under = overlays.lastOrNull {
-                                            overlayBounds(rect, it, signatures)?.contains(p) == true
-                                        }
+                                        val under = currentOverlays.lastOrNull { hits(rect, it, signatures, p) }
                                         if (under != null) { selectedOverlay = under.id; 1 } else 0
                                     }
                                 }
@@ -329,7 +348,7 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                             onDragEnd = { mode = 0 },
                             onDragCancel = { mode = 0 },
                         ) { change, drag ->
-                            val id = selectedOverlay ?: return@detectDragGestures
+                            val id = currentSelection ?: return@detectDragGestures
                             if (mode == 0) return@detectDragGestures
                             change.consume()
                             overlays = overlays.map { o ->
@@ -344,9 +363,11 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                                         is Overlay.Signature -> o.copy(posN = np)
                                     }
                                 } else {
-                                    // Dragging the corner handle scales from the anchor point.
                                     val bounds = overlayBounds(rect, o, signatures) ?: return@map o
-                                    val factor = ((bounds.width + drag.x) / bounds.width)
+                                    // Project the drag onto the overlay's own axis, so resizing a
+                                    // rotated signature still follows your finger.
+                                    val local = unrotate(drag, Offset.Zero, o.rotationDegrees())
+                                    val factor = ((bounds.width + local.x) / bounds.width)
                                         .coerceIn(0.85f, 1.18f)
                                     when (o) {
                                         is Overlay.Text ->
@@ -381,7 +402,13 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                 else -> Modifier
             }
 
-            Canvas(Modifier.fillMaxSize().then(gestures)) {
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    // Belt and braces: tells the system this area owns its edge gestures.
+                    .systemGestureExclusion()
+                    .then(gestures)
+            ) {
                 canvasSize = size
                 val r = fittedRect(size, bitmap.width, bitmap.height)
                 val tone = if (pixelFiltered == null && !showCrop) {
@@ -488,45 +515,77 @@ private fun DrawScope.drawOverlays(
     val selectionStyle = StrokeStyle(2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
     overlays.forEach { overlay ->
         val origin = rect.denormalise(overlay.posN)
-        when (overlay) {
-            is Overlay.Text -> {
-                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                    color = overlay.color.toInt()
-                    textSize = overlay.sizeN * rect.height
+        val bounds = overlayBounds(rect, overlay, signatures)
+        val pivot = bounds?.center ?: origin
+
+        // Everything for one overlay — artwork, frame and handles — is drawn inside the same
+        // rotation, so the handles stay welded to the corners they belong to.
+        rotate(overlay.rotationDegrees(), pivot) {
+            when (overlay) {
+                is Overlay.Text -> {
+                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                        color = overlay.color.toInt()
+                        textSize = overlay.sizeN * rect.height
+                    }
+                    drawIntoCanvas { canvas ->
+                        var y = origin.y
+                        overlay.text.split("\n").forEach { line ->
+                            canvas.nativeCanvas.drawText(line, origin.x, y, paint)
+                            y += paint.textSize * 1.2f
+                        }
+                    }
                 }
-                drawIntoCanvas { canvas ->
-                    var y = origin.y
-                    overlay.text.split("\n").forEach { line ->
-                        canvas.nativeCanvas.drawText(line, origin.x, y, paint)
-                        y += paint.textSize * 1.2f
+
+                is Overlay.Signature -> {
+                    val bmp = signatures[overlay.fileName]
+                    if (bmp != null) {
+                        val width = overlay.widthN * rect.width
+                        val height = width * bmp.height / bmp.width
+                        drawImage(
+                            image = bmp,
+                            dstOffset = IntOffset(origin.x.toInt(), origin.y.toInt()),
+                            dstSize = IntSize(width.toInt(), height.toInt()),
+                        )
                     }
                 }
             }
 
-            is Overlay.Signature -> {
-                val bmp = signatures[overlay.fileName] ?: return@forEach
-                val width = overlay.widthN * rect.width
-                val height = width * bmp.height / bmp.width
-                drawImage(
-                    image = bmp,
-                    dstOffset = IntOffset(origin.x.toInt(), origin.y.toInt()),
-                    dstSize = IntSize(width.toInt(), height.toInt()),
+            if (overlay.id == selectedId && bounds != null) {
+                drawRect(
+                    color = Color(0xFF55E39B),
+                    topLeft = bounds.topLeft,
+                    size = Size(bounds.width, bounds.height),
+                    style = selectionStyle,
                 )
+                drawDeleteBadge(deleteHandle(bounds), handleRadius)
+                drawResizeGrip(resizeHandle(bounds), handleRadius)
             }
         }
-
-        if (overlay.id == selectedId) {
-            val bounds = overlayBounds(rect, overlay, signatures) ?: return@forEach
-            drawRect(
-                color = Color(0xFF55E39B),
-                topLeft = bounds.topLeft,
-                size = Size(bounds.width, bounds.height),
-                style = selectionStyle,
-            )
-            drawDeleteBadge(deleteHandle(bounds), handleRadius)
-            drawResizeGrip(resizeHandle(bounds), handleRadius)
-        }
     }
+}
+
+/** Signatures can be turned; text cannot (yet). */
+private fun Overlay.rotationDegrees(): Float = (this as? Overlay.Signature)?.rotation ?: 0f
+
+/** Maps a screen point back into an overlay's own un-rotated space, for hit testing. */
+private fun unrotate(p: Offset, pivot: Offset, degrees: Float): Offset {
+    if (degrees == 0f) return p
+    val rad = (-degrees * PI / 180.0).toFloat()
+    val dx = p.x - pivot.x
+    val dy = p.y - pivot.y
+    val c = cos(rad)
+    val s = sin(rad)
+    return Offset(pivot.x + dx * c - dy * s, pivot.y + dx * s + dy * c)
+}
+
+private fun hits(
+    rect: Rect,
+    overlay: Overlay,
+    signatures: Map<String, ImageBitmap>,
+    point: Offset,
+): Boolean {
+    val bounds = overlayBounds(rect, overlay, signatures) ?: return false
+    return bounds.contains(unrotate(point, bounds.center, overlay.rotationDegrees()))
 }
 
 /** Tap to remove the overlay. Drawn on the border so it is always reachable. */

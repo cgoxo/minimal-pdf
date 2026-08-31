@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -125,12 +126,40 @@ private fun FilterPanel(filter: FilterSettings, onFilter: (FilterSettings) -> Un
                 )
             }
         }
-        LabelledSlider("Brightness", filter.brightness, -0.5f..0.5f) { onFilter(filter.copy(brightness = it)) }
-        LabelledSlider("Contrast", filter.contrast, 0.4f..2.5f) { onFilter(filter.copy(contrast = it)) }
-        if (filter.mode == FilterMode.BW) {
-            LabelledSlider("Threshold", filter.threshold, 0.1f..0.9f) { onFilter(filter.copy(threshold = it)) }
-        } else if (filter.mode == FilterMode.ORIGINAL) {
-            LabelledSlider("Saturation", filter.saturation, 0f..2f) { onFilter(filter.copy(saturation = it)) }
+        when (filter.mode) {
+            // B&W and Document are ink decisions, not tone curves: one knob is the whole
+            // control surface. Left = cleaner paper, right = keeps fainter marks.
+            FilterMode.BW, FilterMode.DOCUMENT -> {
+                LabelledSlider("Ink sensitivity", filter.threshold, 0.1f..0.95f) {
+                    onFilter(filter.copy(threshold = it))
+                }
+                Text(
+                    "Drag left for whiter paper, right to keep faint pencil and thin strokes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            FilterMode.GRAYSCALE -> {
+                LabelledSlider("Brightness", filter.brightness, -0.5f..0.5f) {
+                    onFilter(filter.copy(brightness = it))
+                }
+                LabelledSlider("Contrast", filter.contrast, 0.4f..2.5f) {
+                    onFilter(filter.copy(contrast = it))
+                }
+            }
+
+            FilterMode.ORIGINAL -> {
+                LabelledSlider("Brightness", filter.brightness, -0.5f..0.5f) {
+                    onFilter(filter.copy(brightness = it))
+                }
+                LabelledSlider("Contrast", filter.contrast, 0.4f..2.5f) {
+                    onFilter(filter.copy(contrast = it))
+                }
+                LabelledSlider("Saturation", filter.saturation, 0f..2f) {
+                    onFilter(filter.copy(saturation = it))
+                }
+            }
         }
     }
 }
@@ -193,7 +222,7 @@ private fun DrawPanel(
                 )
             }
         }
-        LabelledSlider("Brush size", brushWidth, 0.002f..0.05f, onBrushWidth)
+        LabelledSlider("Brush size", brushWidth, 0.002f..0.05f, onChange = onBrushWidth)
     }
     if (picking) {
         ColorPickerDialog(brushColor, onDismiss = { picking = false }) { onBrushColor(it); picking = false }
@@ -315,20 +344,43 @@ private fun SignPanel(
         if (saved.isNotEmpty()) {
             Row(
                 Modifier.fillMaxWidth().padding(top = 8.dp).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 saved.forEach { file ->
                     val bmp = remember(file.path) { PageRenderer.decode(file, 200) }
                     if (bmp != null) {
-                        androidx.compose.foundation.Image(
-                            bitmap = bmp.asImageBitmap(),
-                            contentDescription = "Saved signature",
-                            modifier = Modifier
-                                .size(width = 96.dp, height = 40.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFFEFEFEF))
-                                .clickable { onAddSignature(file.name) },
-                        )
+                        Box {
+                            androidx.compose.foundation.Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = "Saved signature",
+                                modifier = Modifier
+                                    .padding(top = 6.dp, end = 6.dp)
+                                    .size(width = 96.dp, height = 40.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFEFEFEF))
+                                    .clickable { onAddSignature(file.name) },
+                            )
+                            // Deletes the stored signature file, not just this placement.
+                            Box(
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.error)
+                                    .clickable {
+                                        AppContainer.repository.deleteSignature(file)
+                                        saved = AppContainer.repository.signatures()
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Delete saved signature",
+                                    tint = MaterialTheme.colorScheme.onError,
+                                    modifier = Modifier.size(13.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -337,9 +389,24 @@ private fun SignPanel(
             LabelledSlider("Signature width", selectedSig.widthN, 0.1f..0.9f) {
                 onUpdate(selectedSig.copy(widthN = it))
             }
+            LabelledSlider(
+                label = "Rotation",
+                value = selectedSig.rotation,
+                range = -180f..180f,
+                format = { "%.0f°".format(it) },
+            ) { onUpdate(selectedSig.copy(rotation = it)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    onUpdate(selectedSig.copy(rotation = wrapDegrees(selectedSig.rotation - 90f)))
+                }) { Icon(Icons.Default.RotateLeft, "Rotate left") }
+                OutlinedButton(onClick = {
+                    onUpdate(selectedSig.copy(rotation = wrapDegrees(selectedSig.rotation + 90f)))
+                }) { Icon(Icons.Default.RotateRight, "Rotate right") }
+                OutlinedButton(onClick = { onUpdate(selectedSig.copy(rotation = 0f)) }) { Text("Reset") }
+            }
         } else if (saved.isNotEmpty()) {
             Text(
-                "Tap a saved signature to place it, then drag it on the page.",
+                "Tap a saved signature to place it, then drag it on the page. ✕ deletes it for good.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -392,11 +459,12 @@ private fun LabelledSlider(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
+    format: (Float) -> String = { "%.2f".format(it) },
     onChange: (Float) -> Unit,
 ) {
     Column {
         Text(
-            "$label  ${"%.2f".format(value)}",
+            "$label  ${format(value)}",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -560,4 +628,12 @@ private fun SignPanelPreview() = PanelPreview {
 @Composable
 private fun CropPanelPreview() = PanelPreview {
     CropPanel(onAutoDetect = {}, onResetCrop = {}, onRotate = {})
+}
+
+/** Keeps a rotation in a readable -180..180 range instead of drifting to 450 degrees. */
+private fun wrapDegrees(degrees: Float): Float {
+    var d = degrees % 360f
+    if (d > 180f) d -= 360f
+    if (d < -180f) d += 360f
+    return d
 }

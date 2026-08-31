@@ -24,6 +24,7 @@ object PdfExporter {
     private const val MARGIN_PT = 18
 
     fun export(context: Context, repo: DocumentRepository, doc: ScanDocument): Uri {
+        require(doc.pages.isNotEmpty()) { "Refusing to export a document with no pages" }
         val pdf = PdfDocument()
         try {
             doc.pages.forEachIndexed { index, page ->

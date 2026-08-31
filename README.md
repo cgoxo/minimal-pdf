@@ -281,8 +281,8 @@ signatures). Nothing is "applied" — it's all just numbers describing what shou
 
 ```
 decode the JPEG (downscaled)
+  → rotate                               (so the crop editor previews rotation live)
   → crop + straighten using the quad     (Matrix.setPolyToPoly)
-  → rotate
   → apply the filter                     (ColorMatrix, or per-pixel for B&W/Document)
   → draw the brush strokes
   → draw the text and signature overlays
@@ -343,18 +343,20 @@ Five tabs over a single drawing surface:
 
 | Tab | Does |
 |---|---|
-| **Filter** | Original / Greyscale / B&W / Document, with brightness, contrast, saturation and threshold sliders |
+| **Filter** | Original / Greyscale / B&W / Document. Original and Greyscale get brightness, contrast and saturation; **B&W and Document get a single "Ink sensitivity" knob** instead — they are ink decisions, not tone curves, so three sliders was two too many |
 | **Draw** | Freehand brush: a **Colour** button opening a full hue + saturation/value picker, a row of one-tap preset swatches, size slider, undo, clear |
 | **Text** | Add a text box, drag it, change its size and colour. Tap it to select: a dashed frame appears with a red **✕** on the top-right corner to delete it and a green **grip** on the bottom-right to resize by dragging |
-| **Sign** | Same on-page frame — drag to move, corner grip to resize, ✕ to delete. Two ways to get a signature: **Draw** it on a pad with your finger, or **Scan from paper** — photograph a signature written on paper and the app lifts the ink off the page. Either way it is saved as a reusable transparent PNG that can be dropped on any page and resized |
+| **Sign** | Same on-page frame — drag to move, corner grip to resize, ✕ to delete — plus a rotation slider and ±90° buttons. Saved signatures can be deleted from the strip with their own ✕. Two ways to get a signature: **Draw** it on a pad with your finger, or **Scan from paper** — photograph a signature written on paper and the app lifts the ink off the page. Either way it is saved as a reusable transparent PNG that can be dropped on any page and resized |
 | **Crop** | Four draggable corner handles, plus auto-detect and rotate |
 
 **Scanning a signature** (`SignatureScanDialog.kt` + `imaging/SignatureExtractor.kt`) is worth
 reading on its own: a phone photo of paper is never evenly lit, so instead of one brightness
 cutoff, every pixel is compared to the *local* paper brightness around it, and how much darker
 it is becomes that pixel's **transparency**. Ink survives, paper disappears, and the soft edges
-of the strokes are preserved rather than turned into a fax. The result is auto-trimmed to the
-ink and previewed with a sensitivity slider before anything is saved.
+of the strokes are preserved rather than turned into a fax. After the shot you drag a box around the part of the photo that is
+actually the signature — everything outside it is dimmed and discarded, which is what stops
+other writing on the page coming along too. The result is auto-trimmed to the ink and
+previewed live as you adjust the box and the sensitivity slider, before anything is saved.
 
 *Concepts to notice:* one `Canvas` composable draws the image *and* the annotations in the
 same coordinate space; `pointerInput` + `detectDragGestures` for the interactions;
@@ -476,6 +478,11 @@ assembleDebug --stacktrace` gives more.
 actually contrast with what's underneath: white paper on a dark desk works, white paper on a
 white table does not. Capture anyway and fix the corners by hand in the **Crop** tab.
 
+**The system back gesture fires while dragging a crop corner** — the drawing surface is inset
+20 dp from the screen edges and marked with `systemGestureExclusion()`, but Android caps how
+much edge a window may claim. If a corner still lands under the back strip, drag the *opposite*
+corner instead, or turn off gesture navigation in Settings → System → Gestures.
+
 **A scanned signature is blotchy, or picks up the lines of the notebook** — drag the **Ink
 sensitivity** slider down: it raises the bar for what counts as ink, so paper texture and faint
 rules drop out first. If the whole thing is grey mush, the photo probably has a shadow falling
@@ -530,6 +537,7 @@ Honest list, so nothing surprises you:
 - **Edge detection is home-grown**, so it is weaker than OpenCV's on low-contrast, cluttered
   or shadowed backgrounds. That is a deliberate trade (no 40 MB native dependency, and the
   algorithm stays readable); the manual corner handles are the safety net.
+- **Text overlays cannot be rotated** — only signatures can. Same mechanism, just not wired up.
 - **Editing a page does not re-export the PDF automatically.** Your edits are saved
   immediately, but the PDF on disk is only rewritten when you press **Save PDF** on the
   Review screen.

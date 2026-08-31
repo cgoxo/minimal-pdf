@@ -23,6 +23,7 @@ object EdgeDetector {
     private const val THETA_STEPS = 180   // 1 degree per bin
     private const val THETA_SPREAD = 8    // votes cast around the gradient normal
     private const val MAX_PEAKS = 40
+    private const val MARGIN = 1.025f  // keep ~2.5% of white page border
 
     private val cosT = FloatArray(THETA_STEPS) { cos(Math.toRadians(it.toDouble())).toFloat() }
     private val sinT = FloatArray(THETA_STEPS) { sin(Math.toRadians(it.toDouble())).toFloat() }
@@ -137,11 +138,31 @@ object EdgeDetector {
         if (corners.any { it.first < -slackX || it.first > w + slackX || it.second < -slackY || it.second > h + slackY }) return null
         if (shoelace(corners) < 0.15f * w * h) return null
 
-        return Quad(
-            PointN(tl.first / w, tl.second / h),
-            PointN(tr.first / w, tr.second / h),
-            PointN(br.first / w, br.second / h),
-            PointN(bl.first / w, bl.second / h),
+        // Hough locks onto the *inside* of the page border, which shaves off the white
+        // margin. Push the quad out slightly from its own centre to keep that margin.
+        return expand(
+            Quad(
+                PointN(tl.first / w, tl.second / h),
+                PointN(tr.first / w, tr.second / h),
+                PointN(br.first / w, br.second / h),
+                PointN(bl.first / w, bl.second / h),
+            ),
+            MARGIN,
+        )
+    }
+
+    /** Scales a quad about its centroid, clamped to the frame. */
+    private fun expand(quad: Quad, factor: Float): Quad {
+        val pts = quad.toList()
+        val cx = pts.sumOf { it.x.toDouble() }.toFloat() / pts.size
+        val cy = pts.sumOf { it.y.toDouble() }.toFloat() / pts.size
+        return Quad.fromList(
+            pts.map {
+                PointN(
+                    (cx + (it.x - cx) * factor).coerceIn(0f, 1f),
+                    (cy + (it.y - cy) * factor).coerceIn(0f, 1f),
+                )
+            }
         )
     }
 

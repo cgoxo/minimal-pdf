@@ -133,7 +133,14 @@ fun PdfViewerScreen(docId: String, onBack: () -> Unit) {
     ) { padding ->
         if (source == null || source.pageCount == 0) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Could not open this PDF.", color = MaterialTheme.colorScheme.error)
+                Text(
+                    if (doc?.pages.isNullOrEmpty()) {
+                        "This document has no pages.\nAdd pages and save it again."
+                    } else {
+                        "Could not open this PDF."
+                    },
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
             return@Scaffold
         }

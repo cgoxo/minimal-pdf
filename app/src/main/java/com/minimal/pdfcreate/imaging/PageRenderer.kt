@@ -91,12 +91,19 @@ object PageRenderer {
         return out
     }
 
-    /** Source image after crop + rotation, before any filter or annotation. */
+    /**
+     * Source image after rotation + crop, before any filter or annotation.
+     *
+     * Rotation is applied *first* and the crop quad is stored relative to the rotated frame.
+     * That ordering is what lets the crop editor show a rotation immediately, with the corner
+     * handles still sitting on the right part of the page.
+     */
     fun base(repo: DocumentRepository, docId: String, page: Page, maxDim: Int): Bitmap? {
         val src = decode(repo.imageFile(docId, page.imageName), maxDim) ?: return null
-        val cropped = crop(src, page.crop)
-        if (cropped != src) src.recycle()
-        return rotate(cropped, page.rotation)
+        val rotated = rotate(src, page.rotation)
+        val cropped = crop(rotated, page.crop)
+        if (cropped !== rotated) rotated.recycle()
+        return cropped
     }
 
     /** The finished page: everything applied. */
@@ -154,11 +161,15 @@ object PageRenderer {
                     val sig = decode(file, 1200) ?: continue
                     val targetW = overlay.widthN * w
                     val targetH = targetW * sig.height / sig.width
-                    val dst = android.graphics.RectF(
-                        overlay.posN.x * w, overlay.posN.y * h,
-                        overlay.posN.x * w + targetW, overlay.posN.y * h + targetH
-                    )
+                    val left = overlay.posN.x * w
+                    val top = overlay.posN.y * h
+                    val dst = android.graphics.RectF(left, top, left + targetW, top + targetH)
+                    val saved = canvas.save()
+                    if (overlay.rotation != 0f) {
+                        canvas.rotate(overlay.rotation, left + targetW / 2f, top + targetH / 2f)
+                    }
                     canvas.drawBitmap(sig, null, dst, Paint(Paint.FILTER_BITMAP_FLAG))
+                    canvas.restoreToCount(saved)
                     sig.recycle()
                 }
             }

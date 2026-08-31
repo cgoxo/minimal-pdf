@@ -1,12 +1,12 @@
 package com.minimal.pdfcreate.ui.common
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
@@ -47,39 +49,38 @@ fun fittedRect(canvas: Size, imgW: Int, imgH: Int): Rect {
     val scale = minOf(canvas.width / imgW, canvas.height / imgH)
     val w = imgW * scale
     val h = imgH * scale
-    val left = (canvas.width - w) / 2f
-    val top = (canvas.height - h) / 2f
-    return Rect(Offset(left, top), Size(w, h))
+    return Rect(Offset((canvas.width - w) / 2f, (canvas.height - h) / 2f), Size(w, h))
 }
-
-fun Rect.toNormalised(point: Offset): Offset =
-    Offset(((point.x - left) / width).coerceIn(0f, 1f), ((point.y - top) / height).coerceIn(0f, 1f))
-
-fun Rect.fromNormalised(x: Float, y: Float): Offset = Offset(left + x * width, top + y * height)
-
-fun Bitmap.aspect(): Float = if (height == 0) 1f else width.toFloat() / height
 
 val SWATCHES = listOf(
     Color(0xFF000000), Color(0xFFFFFFFF), Color(0xFFE53935), Color(0xFFFB8C00),
     Color(0xFFFDD835), Color(0xFF43A047), Color(0xFF1E88E5), Color(0xFF8E24AA),
 )
 
-/** Minimal HSV picker: hue strip on top, saturation/value square below, plus swatches. */
+private fun hsv(h: Float, s: Float, v: Float) =
+    Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s, v)))
+
+/**
+ * HSV colour picker: preset swatches, a saturation/value square, and a hue slider.
+ *
+ * The square uses one `awaitEachGesture` loop — press, then drag — rather than separate tap
+ * and drag detectors. Stacked detectors on the same node fight over the down event, which is
+ * how the earlier version ended up feeling like it ignored you. Hue is a plain Material
+ * `Slider` for the same reason: no custom gesture code to get wrong.
+ */
 @Composable
 fun ColorPickerDialog(
     initial: Color,
     onDismiss: () -> Unit,
     onPick: (Color) -> Unit,
 ) {
-    val hsv = remember {
-        FloatArray(3).also {
-            android.graphics.Color.colorToHSV(initial.toArgb(), it)
-        }
+    val start = remember(initial) {
+        FloatArray(3).also { android.graphics.Color.colorToHSV(initial.toArgb(), it) }
     }
-    var hue by remember { mutableFloatStateOf(hsv[0]) }
-    var sat by remember { mutableFloatStateOf(hsv[1]) }
-    var value by remember { mutableFloatStateOf(hsv[2]) }
-    val current = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value)))
+    var hue by remember { mutableFloatStateOf(start[0]) }
+    var sat by remember { mutableFloatStateOf(start[1]) }
+    var value by remember { mutableFloatStateOf(start[2]) }
+    val current = hsv(hue, sat, value)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -90,7 +91,7 @@ fun ColorPickerDialog(
             Column {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
                 ) {
                     SWATCHES.forEach { swatch ->
                         Box(
@@ -108,75 +109,68 @@ fun ColorPickerDialog(
                     }
                 }
 
-                // Saturation (x) / value (y) square for the current hue.
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .pointerInput(Unit) {
-                            fun update(p: Offset) {
-                                sat = (p.x / size.width).coerceIn(0f, 1f)
-                                value = 1f - (p.y / size.height).coerceIn(0f, 1f)
-                            }
-                            detectDragGestures(onDragStart = { update(it) }) { change, _ -> update(change.position) }
-                        }
-                        .pointerInput(Unit) {
-                            detectTapGestures { p ->
-                                sat = (p.x / size.width).coerceIn(0f, 1f)
-                                value = 1f - (p.y / size.height).coerceIn(0f, 1f)
-                            }
-                        }
-                ) {
-                    Canvas(Modifier.fillMaxWidth().height(160.dp)) {
-                        val pure = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, 1f)))
-                        drawRect(Brush.horizontalGradient(listOf(Color.White, pure)))
-                        drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
-                        drawCircle(
-                            color = Color.White,
-                            radius = 8f,
-                            center = Offset(sat * size.width, (1f - value) * size.height),
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f)
-                        )
-                    }
-                }
-
-                // Hue strip.
                 Canvas(
                     Modifier
                         .fillMaxWidth()
-                        .height(28.dp)
-                        .padding(top = 12.dp)
+                        .height(170.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .pointerInput(Unit) {
-                            fun update(p: Offset) { hue = (p.x / size.width).coerceIn(0f, 1f) * 360f }
-                            detectDragGestures(onDragStart = { update(it) }) { change, _ -> update(change.position) }
+                            fun apply(p: Offset) {
+                                sat = (p.x / size.width).coerceIn(0f, 1f)
+                                value = 1f - (p.y / size.height).coerceIn(0f, 1f)
+                            }
+                            awaitEachGesture {
+                                val down = awaitFirstDown()
+                                apply(down.position)
+                                down.consume()
+                                drag(down.id) { change ->
+                                    apply(change.position)
+                                    change.consume()
+                                }
+                            }
                         }
                 ) {
-                    val colors = (0..6).map { Color(android.graphics.Color.HSVToColor(floatArrayOf(it * 60f, 1f, 1f))) }
-                    drawRect(Brush.horizontalGradient(colors))
-                    drawLine(
-                        color = Color.White,
-                        start = Offset(hue / 360f * size.width, 0f),
-                        end = Offset(hue / 360f * size.width, size.height),
-                        strokeWidth = 4f
-                    )
+                    drawRect(Brush.horizontalGradient(listOf(Color.White, hsv(hue, 1f, 1f))))
+                    drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
+                    val centre = Offset(sat * size.width, (1f - value) * size.height)
+                    drawCircle(Color.White, radius = 11f, center = centre, style = Stroke(3f))
+                    drawCircle(Color.Black, radius = 14f, center = centre, style = Stroke(1.5f))
                 }
 
-                Box(
+                Canvas(
                     Modifier
-                        .padding(top = 12.dp)
                         .fillMaxWidth()
-                        .height(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(current)
-                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
-                )
+                        .height(14.dp)
+                        .padding(top = 12.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                ) {
+                    drawRect(
+                        Brush.horizontalGradient(
+                            (0..6).map { hsv(it * 60f, 1f, 1f) }
+                        )
+                    )
+                }
+                Slider(value = hue, onValueChange = { hue = it }, valueRange = 0f..360f)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(current)
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+                    )
+                    Text(
+                        "  #%06X".format(current.toArgb() and 0xFFFFFF),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
     )
 }
 
-@Preview(name = "Colour picker", showBackground = true, widthDp = 380, heightDp = 560)
+@Preview(name = "Colour picker", showBackground = true, widthDp = 380, heightDp = 620)
 @Composable
 private fun ColorPickerPreview() {
     com.minimal.pdfcreate.ui.theme.MinimalPdfTheme(dynamicColor = false) {
