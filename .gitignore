@@ -1,0 +1,18 @@
+# Android / Gradle
+*.iml
+.gradle/
+.kotlin/
+build/
+/captures
+.externalNativeBuild
+.cxx
+
+# Machine-specific: points at your local Android SDK
+local.properties
+
+# IDE
+.idea/
+*.hprof
+
+# macOS
+.DS_Store
