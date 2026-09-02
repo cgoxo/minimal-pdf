@@ -176,7 +176,7 @@ fun ColorPickerDialog(
 @Preview(name = "Colour picker", showBackground = true, widthDp = 380, heightDp = 620)
 @Composable
 private fun ColorPickerPreview() {
-    com.minimal.pdfcreate.ui.theme.MinimalPdfTheme(dynamicColor = false) {
+    com.minimal.pdfcreate.ui.theme.ScanlyTheme(dynamicColor = false) {
         ColorPickerDialog(initial = Color(0xFF1E88E5), onDismiss = {}, onPick = {})
     }
 }

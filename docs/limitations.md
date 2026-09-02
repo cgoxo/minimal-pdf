@@ -25,7 +25,7 @@ Honest list, so nothing surprises you:
 - **Release builds need a keystore.** `app/build.gradle.kts` reads `keystore.properties` from
   the project root, which is gitignored along with `*.jks` — so a fresh clone builds and runs
   debug fine, but cannot produce a signed release until you generate your own key:
-  `keytool -genkeypair -keystore ~/keystores/minimal-pdf-release.jks -alias minimalpdf
+  `keytool -genkeypair -keystore ~/keystores/scanly-release.jks -alias scanly
   -keyalg RSA -keysize 4096 -validity 10000`. Losing that key means never being able to ship
   an update that upgrades an existing install.
 - **`minSdk 29`** means Android 9 and older can't install it.

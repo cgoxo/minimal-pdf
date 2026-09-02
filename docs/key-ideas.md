@@ -54,7 +54,7 @@ Two different places, on purpose:
 |---|---|---|---|
 | Original captures + `manifest.json` | app-private `filesDir/docs/<docId>/` | only this app, no permission needed | no |
 | Signatures | app-private `filesDir/signatures/` | only this app | no |
-| **The exported PDFs** | **`Documents/minimalPdf/`** | any app, the Files app, your computer | yes |
+| **The exported PDFs** | **`Documents/Scanly/`** | any app, the Files app, your computer | yes |
 
 The rule since Android 10 ("scoped storage"): an app can freely write into a public
 collection via **MediaStore**, and can always read back **its own** entries there without any
@@ -70,7 +70,7 @@ To look at the private folder from your Mac (debug builds only):
 adb shell run-as com.minimal.pdfcreate ls -R files
 ```
 
-And the PDFs are simply visible in the phone's **Files** app under **Documents → minimalPdf**.
+And the PDFs are simply visible in the phone's **Files** app under **Documents → Scanly**.
 
 ---
 

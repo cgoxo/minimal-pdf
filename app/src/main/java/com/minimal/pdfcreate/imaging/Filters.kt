@@ -82,48 +82,7 @@ object Filters {
             FilterMode.DOCUMENT -> document(toned, s.threshold).also { toned.recycle() }
             FilterMode.COLOR_DOC -> colourDocument(toned, s.threshold).also { toned.recycle() }
         }
-        // Sharpening a two-tone image only makes the jaggies crisper, so B&W skips it.
-        if (s.sharpen <= 0.01f || s.mode == FilterMode.BW) return processed
-        return sharpen(processed, s.sharpen).also { if (it !== processed) processed.recycle() }
-    }
-
-    /**
-     * Unsharp mask: subtract a blurred copy to find the fine detail, then add that detail
-     * back, amplified.
-     *
-     *     detail = pixel - localAverage
-     *     out    = pixel + amount * detail
-     *
-     * The local average comes from the same [IntegralImage] the Document filter uses, with a
-     * radius of a few pixels, so it costs one pass regardless of the radius. It is computed on
-     * luma and applied to all three channels, which sharpens edges without shifting colour.
-     */
-    private fun sharpen(src: Bitmap, amount: Float): Bitmap {
-        val w = src.width
-        val h = src.height
-        if (w < 4 || h < 4) return src
-        val px = IntArray(w * h)
-        src.getPixels(px, 0, w, 0, 0, w, h)
-
-        val grey = greyscale(src)
-        val integral = IntegralImage(grey, w, h)
-        val radius = maxOf(1, minOf(w, h) / 320)
-        val gain = amount.coerceIn(0f, 1f) * 1.8f
-
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                val i = y * w + x
-                val detail = grey[i] - integral.mean(x, y, radius)
-                if (detail == 0) continue
-                val boost = (detail * gain).toInt()
-                val p = px[i]
-                val r = (((p shr 16) and 0xFF) + boost).coerceIn(0, 255)
-                val g = (((p shr 8) and 0xFF) + boost).coerceIn(0, 255)
-                val b = ((p and 0xFF) + boost).coerceIn(0, 255)
-                px[i] = (p and 0xFF000000.toInt()) or (r shl 16) or (g shl 8) or b
-            }
-        }
-        return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+        return processed
     }
 
     /** Global threshold — hard black/white, smallest files. */
