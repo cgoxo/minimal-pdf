@@ -28,6 +28,11 @@ object Filters {
         if (s.mode == FilterMode.BW || s.mode == FilterMode.DOCUMENT) {
             return ColorMatrix().apply { setSaturation(0f) }.array
         }
+        // Colour doc is driven by its ink knob too, but the whole point is that the colour
+        // survives — so saturation is the one tone control it keeps.
+        if (s.mode == FilterMode.COLOR_DOC) {
+            return ColorMatrix().apply { setSaturation(s.saturation) }.array
+        }
         val c = s.contrast
         // Pivot contrast around mid grey, then add brightness as a 0..255 offset.
         val t = (1f - c) * 127.5f + s.brightness * 255f
@@ -75,6 +80,7 @@ object Filters {
             FilterMode.ORIGINAL, FilterMode.GRAYSCALE -> toned
             FilterMode.BW -> binarise(toned, s.threshold).also { toned.recycle() }
             FilterMode.DOCUMENT -> document(toned, s.threshold).also { toned.recycle() }
+            FilterMode.COLOR_DOC -> colourDocument(toned, s.threshold).also { toned.recycle() }
         }
         // Sharpening a two-tone image only makes the jaggies crisper, so B&W skips it.
         if (s.sharpen <= 0.01f || s.mode == FilterMode.BW) return processed
@@ -155,6 +161,53 @@ object Filters {
                 // whitens everything else, high preserves faint pencil and paper tone.
                 val out = if (v >= white) 255 else (v * 255 / white).coerceIn(0, 255)
                 px[y * w + x] = 0xFF000000.toInt() or (out shl 16) or (out shl 8) or out
+            }
+        }
+        return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+    }
+
+    /**
+     * "Colour doc": [document]'s shadow flattening, but colour-preserving.
+     *
+     * Document computes a new grey value per pixel and writes it to all three channels, which
+     * is what throws the colour away. Here the same lifted value is turned into a *gain*
+     * against the pixel's own luma, and that one gain multiplies R, G and B together:
+     *
+     *     gain = lifted / luma        out = (r, g, b) * gain
+     *
+     * Scaling all three channels by the same number leaves their ratios — and so the hue —
+     * untouched, while paper that was grey at luma 190 is pushed to 255. The result reads as a
+     * scan rather than a photo, but a red stamp is still red.
+     */
+    private fun colourDocument(src: Bitmap, ink: Float): Bitmap {
+        val w = src.width
+        val h = src.height
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+        val grey = greyscale(src)
+        val integral = IntegralImage(grey, w, h)
+        val radius = maxOf(8, minOf(w, h) / 16)
+        val white = (200f + ink.coerceIn(0f, 1f) * 55f).toInt().coerceAtLeast(1)
+
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val i = y * w + x
+                val luma = grey[i]
+                // A pixel with no light in it has no colour to preserve, and dividing by its
+                // luma would be a divide by zero — leave it black.
+                if (luma <= 0) {
+                    px[i] = 0xFF000000.toInt()
+                    continue
+                }
+                val mean = integral.mean(x, y, radius).coerceAtLeast(1)
+                val v = (luma * 255 / mean).coerceIn(0, 255)
+                val lifted = if (v >= white) 255 else (v * 255 / white).coerceIn(0, 255)
+
+                val p = px[i]
+                fun channel(shift: Int) =
+                    (((p shr shift) and 0xFF) * lifted / luma).coerceIn(0, 255)
+                px[i] = 0xFF000000.toInt() or
+                    (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
             }
         }
         return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)

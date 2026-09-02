@@ -9,7 +9,7 @@
 Point the camera at a page — it finds the edges, straightens the page, cleans it up, and saves
 a PDF to `Documents/minimalPdf`. Read, annotate, sign and re-edit it, all inside the app.
 
-[**⬇ Download the APK**](https://github.com/cgoxo/minimal-pdf/releases/latest) · 3.9 MB · Android 10+
+[**⬇ Download the APK**](https://github.com/cgoxo/minimal-pdf/releases/latest) · 4.0 MB · Android 10+
 
 </div>
 
@@ -17,14 +17,19 @@ a PDF to `Documents/minimalPdf`. Read, annotate, sign and re-edit it, all inside
 
 ## Features
 
-- **Scan** with live page-edge detection, and drag the corners when it guesses wrong
-- **Filters** — Original, Greyscale, B&W and a shadow-flattening Document mode, plus Enhance
-- **Draw** with a brush: colour picker, presets, an eyedropper, adjustable size, undo
+- **Scan** with live page-edge detection, a flash toggle, and drag the corners when it
+  guesses wrong
+- **Import** photos from the gallery, or an existing PDF — its pages come in editable
+- **Filters** — captures land as **Colour doc** by default: paper whitened and shadows
+  flattened, colour kept. Original, Greyscale, B&W and Document are one tap away, plus Enhance
+- **Draw** and **Text** share a brush colour picker, presets, an eyedropper that samples
+  straight off the page, and undo
 - **Text and signatures** — drag, resize, rotate. Signatures can be drawn on a pad or
   **scanned off paper**, with the ink lifted onto a transparent background
 - **Non-destructive** — pages store instructions, never flattened pixels, so any page of any
   document can be reopened and re-edited with every slider where you left it
 - **In-app viewer** — no hand-off to Drive or anything else
+- **A4 output** — every page is exported as a real A4 sheet, portrait or landscape
 - No ads, no accounts, no subscriptions, no analytics. One permission: `CAMERA`
 
 ## Build it
@@ -62,9 +67,9 @@ platform rather than handed to a third-party SDK — **no OpenCV, no ML Kit, no 
 
 | | |
 |---|---|
-| Page detection | Sobel + a gradient-guided Hough transform, by hand |
+| Page detection | Sobel + a gradient-guided Hough transform, by hand, with edge-polarity and border-contrast checks to tell a page from what is printed on it |
 | Perspective correction | `Matrix.setPolyToPoly` |
 | Filters | `ColorMatrix`, plus summed-area tables for local-mean work |
 | PDF writing | `android.graphics.pdf.PdfDocument` |
-| PDF viewing | `android.graphics.pdf.PdfRenderer` |
+| PDF viewing / import | `android.graphics.pdf.PdfRenderer` |
 | Camera | CameraX |

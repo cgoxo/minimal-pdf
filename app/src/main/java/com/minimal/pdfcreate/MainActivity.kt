@@ -45,6 +45,9 @@ private fun AppNavHost(nav: NavHostController) {
                 onCreate = { docId -> nav.navigate(Routes.camera(docId)) },
                 onOpen = { docId -> nav.navigate(Routes.viewer(docId)) },
                 onEdit = { docId -> nav.navigate(Routes.review(docId)) },
+                // An import lands in the same place a scan does: the review screen, with the
+                // new pages already there and nothing exported yet.
+                onImported = { docId -> nav.navigate(Routes.review(docId)) },
             )
         }
         composable("camera/{docId}") { entry ->

@@ -50,6 +50,17 @@ object PageRenderer {
         return scaled
     }
 
+    /** A copy of [src] whose longest side is at most [maxDim]; [src] itself if already smaller. */
+    fun scaled(src: Bitmap, maxDim: Int): Bitmap {
+        val longest = max(src.width, src.height)
+        if (longest <= maxDim) return src
+        val scale = maxDim.toFloat() / longest
+        return Bitmap.createScaledBitmap(
+            src, (src.width * scale).toInt().coerceAtLeast(1),
+            (src.height * scale).toInt().coerceAtLeast(1), true
+        )
+    }
+
     /**
      * Perspective-corrects [src] to the rectangle implied by [quad].
      *

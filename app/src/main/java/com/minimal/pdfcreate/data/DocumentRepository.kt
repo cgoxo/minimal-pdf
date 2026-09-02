@@ -47,7 +47,42 @@ class DocumentRepository(context: Context) {
             doc.pdfFileName?.let { runCatching { PdfStore.delete(appContext, it) } }
             docDir(doc.id).deleteRecursively()
         }
-        _documents.value = real.sortedByDescending { it.updatedAt }
+        _documents.value = reconcileExports(real).sortedByDescending { it.updatedAt }
+    }
+
+    /**
+     * Drops [ScanDocument.pdfFileName] for any document whose exported PDF is no longer in
+     * `Documents/minimalPdf`.
+     *
+     * The folder is a public one: the user can delete a PDF from Files, from a desktop over
+     * USB, or from anywhere else, and nothing tells us when they do. Without this the card
+     * stayed on the home screen still claiming to be exported, and tapping it opened a viewer
+     * with nothing behind it. Reverting the document to a draft keeps the pages — which are
+     * ours, in private storage, and were never deleted — and makes the card open the editor,
+     * so the fix for a deleted PDF is simply to save it again.
+     *
+     * One MediaStore query for the whole folder, and only when something claims to be
+     * exported; the manifests are rewritten in place so the correction survives a restart.
+     */
+    private fun reconcileExports(docs: List<ScanDocument>): List<ScanDocument> {
+        if (docs.none { it.pdfFileName != null }) return docs
+        val present = runCatching { PdfStore.list(appContext).mapTo(HashSet()) { it.displayName } }
+            .getOrElse { return docs }  // Query failed: assume nothing is missing.
+        return docs.map { doc ->
+            val name = doc.pdfFileName
+            if (name == null || name in present) {
+                doc
+            } else {
+                // Not a user edit, so updatedAt stays put: a file vanishing elsewhere should
+                // not shuffle the document to the top of the list.
+                doc.copy(pdfFileName = null).also(::writeManifest)
+            }
+        }
+    }
+
+    private fun writeManifest(doc: ScanDocument) {
+        File(docDir(doc.id), MANIFEST)
+            .writeText(json.encodeToString(ScanDocument.serializer(), doc))
     }
 
     private fun readManifest(dir: File): ScanDocument? {
@@ -80,9 +115,7 @@ class DocumentRepository(context: Context) {
         get(docId) ?: ScanDocument(id = docId, name = defaultName())
 
     fun save(doc: ScanDocument) {
-        val updated = doc.copy(updatedAt = System.currentTimeMillis())
-        File(docDir(doc.id), MANIFEST)
-            .writeText(json.encodeToString(ScanDocument.serializer(), updated))
+        writeManifest(doc.copy(updatedAt = System.currentTimeMillis()))
         refresh()
     }
 

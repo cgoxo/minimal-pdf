@@ -84,6 +84,7 @@ import com.minimal.pdfcreate.imaging.Filters
 import com.minimal.pdfcreate.imaging.PageRenderer
 import com.minimal.pdfcreate.ui.common.fittedRect
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.PI
@@ -178,12 +179,23 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
         }
     }
 
-    // B&W / Document need per-pixel work, so they run off the main thread. The tone-only
-    // modes are previewed for free by handing a ColorFilter to drawImage.
-    val pixelFiltered by produceState<Bitmap?>(initialValue = null, baseBitmap, filter) {
+    // B&W / Document / Colour doc need per-pixel work, so they run off the main thread. The
+    // tone-only modes are previewed for free by handing a ColorFilter to drawImage.
+    val toneOnly = (filter.mode == FilterMode.ORIGINAL || filter.mode == FilterMode.GRAYSCALE) &&
+        filter.sharpen <= 0.01f
+
+    // A small copy of the page, kept alongside the full one. Filtering 1600px costs a few
+    // hundred milliseconds — fine once, hopeless sixty times a second — so the slider drags
+    // against this instead.
+    val previewBase by produceState<Bitmap?>(initialValue = null, baseBitmap) {
         val base = baseBitmap
-        val toneOnly = (filter.mode == FilterMode.ORIGINAL || filter.mode == FilterMode.GRAYSCALE) &&
-            filter.sharpen <= 0.01f
+        value = if (base == null) null
+        else withContext(Dispatchers.Default) { PageRenderer.scaled(base, PREVIEW_DIM) }
+    }
+
+    // Recomputed on every single slider value, immediately: this is the live feedback.
+    val fastFiltered by produceState<Bitmap?>(initialValue = null, previewBase, filter, toneOnly) {
+        val base = previewBase
         value = if (base == null || toneOnly) {
             null
         } else {
@@ -191,10 +203,23 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
         }
     }
 
+    // The sharp one, but only once the value has stopped moving. produceState cancels this
+    // block on every change, so a drag never queues up a backlog of full-size renders.
+    val pixelFiltered by produceState<Bitmap?>(initialValue = null, baseBitmap, filter, toneOnly) {
+        value = null
+        val base = baseBitmap
+        if (base == null || toneOnly) return@produceState
+        delay(SETTLE_MS)
+        value = withContext(Dispatchers.Default) { runCatching { Filters.apply(base, filter) }.getOrNull() }
+    }
+
+    // Sharp if it is ready, otherwise the low-res stand-in, otherwise no filter at all.
+    val pixelPreview = pixelFiltered ?: fastFiltered
+
     val showCrop = tab == EditorTab.CROP
     val displayed = when {
         showCrop -> cropSource
-        pixelFiltered != null -> pixelFiltered
+        pixelPreview != null -> pixelPreview
         else -> baseBitmap
     }
 
@@ -311,18 +336,19 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
             var canvasSize by remember { mutableStateOf(Size.Zero) }
             val rect = fittedRect(canvasSize, bitmap.width, bitmap.height)
 
-            val gestures = when (tab) {
-                // Eyedropper mode borrows the draw surface. Press and *hold* to see a loupe
-                // of the colour under your finger, slide to adjust, lift to accept — a finger
-                // covers the pixel it is on, so a blind tap would be a guess.
-                EditorTab.DRAW if eyedropper -> Modifier.pointerInput(rect, bitmap, pixelFiltered, filter) {
+            // Eyedropper mode borrows the page surface, from the Draw tab or the Text one.
+            // Press and *hold* to see a loupe of the colour under your finger, slide to
+            // adjust, lift to accept — a finger covers the pixel it is on, so a blind tap
+            // would be a guess. Hoisted out of the `when` because a guarded branch cannot
+            // also list two tabs.
+            val eyedropperGesture = Modifier.pointerInput(rect, bitmap, pixelPreview, filter, tab) {
                     fun sampleAt(p: Offset) {
                         val n = rect.normalise(p)
                         val px = (n.x * bitmap.width).toInt().coerceIn(0, bitmap.width - 1)
                         val py = (n.y * bitmap.height).toInt().coerceIn(0, bitmap.height - 1)
                         val raw = bitmap.getPixel(px, py)
                         pickColor = Color(
-                            if (pixelFiltered == null) {
+                            if (pixelPreview == null) {
                                 Filters.applyMatrixToColor(raw, Filters.matrixValues(filter))
                             } else {
                                 raw
@@ -338,11 +364,30 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                             sampleAt(change.position)
                             change.consume()
                         }
-                        brushColor = pickColor
+                        // The sampled colour belongs to whichever tool asked for it, and on
+                        // the Text tab a selected box is recoloured in place rather than only
+                        // arming the next one.
+                        if (tab == EditorTab.TEXT) {
+                            val chosen = pickColor.toArgb().toLong() and 0xFFFFFFFFL
+                            val selectedText = overlays
+                                .firstOrNull { it.id == selectedOverlay } as? Overlay.Text
+                            if (selectedText != null) {
+                                overlays = overlays.map {
+                                    if (it.id == selectedText.id) selectedText.copy(color = chosen) else it
+                                }
+                            }
+                            textColor = pickColor
+                        } else {
+                            brushColor = pickColor
+                        }
                         pickPoint = null
                         eyedropper = false
                     }
-                }
+            }
+
+            val gestures = when (tab) {
+                EditorTab.DRAW if eyedropper -> eyedropperGesture
+                EditorTab.TEXT if eyedropper -> eyedropperGesture
 
                 EditorTab.DRAW -> Modifier.pointerInput(brushColor, brushWidth, rect) {
                     detectDragGestures(
@@ -672,6 +717,12 @@ private fun DrawScope.drawEyedropper(point: Offset, colour: Color) {
     drawCircle(colour, radius = radius, center = bubble)
     drawCircle(Color.White, radius = radius, center = bubble, style = StrokeStyle(3.dp.toPx()))
 }
+
+/** Longest side of the throwaway bitmap the filter sliders preview against. */
+private const val PREVIEW_DIM = 720
+
+/** How still a slider must be before the full-resolution render is worth starting. */
+private const val SETTLE_MS = 260L
 
 /** Signatures can be turned; text cannot (yet). */
 private fun Overlay.rotationDegrees(): Float = (this as? Overlay.Signature)?.rotation ?: 0f
