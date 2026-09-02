@@ -1,17 +1,43 @@
 <div align="center">
 
-<img src="docs/icon.png" width="112" alt="MinimalPDF icon">
+<img src="docs/icon.png" width="112" alt="Scanly icon">
 
-# MinimalPDF
+# Scanly
 
 **A free, ad-free document scanner and PDF creator for Android.**
 
 Point the camera at a page — it finds the edges, straightens the page, cleans it up, and saves
-a PDF to `Documents/minimalPdf`. Read, annotate, sign and re-edit it, all inside the app.
+a PDF to `Documents/Scanly`. Read, annotate, sign and re-edit it, all inside the app.
 
 [**⬇ Download the APK**](https://github.com/cgoxo/minimal-pdf/releases/latest) · 4.0 MB · Android 10+
 
 </div>
+
+---
+
+## Why "Scanly"
+
+**Scanner + friendly.** The name is the whole design brief.
+
+Every free scanner app on the store is a scanner *first* and something else second — a
+subscription funnel, an ad surface, an account you did not want, a cloud you did not ask to
+upload your bank statements to. The scanning part is usually fine. Everything wrapped around
+it is not.
+
+Scanly is the scanner without the wrapper. No ads, no accounts, no subscriptions, no
+analytics, one permission. It opens straight to your documents, it saves a real PDF to a
+folder you can see in Files, and it never asks you for anything.
+
+The friendly half runs deeper than what is missing, though. Nothing you do is final: a page
+stores your crop, your filter and your annotations as *instructions*, so any page of any
+document reopens months later with every slider exactly where you left it — there is no
+version of this app where you have to rescan because you flattened something by accident.
+Captures land looking like a scan rather than a photo, so the common case needs no work at
+all, and the uncommon case is one tap away. And when something does go wrong — a PDF deleted
+from the folder, a page detected badly — it tells you and hands you the way back, instead of
+showing an error and stopping.
+
+Small, quiet, and on your side. That is the friendly part.
 
 ---
 
@@ -21,7 +47,7 @@ a PDF to `Documents/minimalPdf`. Read, annotate, sign and re-edit it, all inside
   guesses wrong
 - **Import** photos from the gallery, or an existing PDF — its pages come in editable
 - **Filters** — captures land as **Colour doc** by default: paper whitened and shadows
-  flattened, colour kept. Original, Greyscale, B&W and Document are one tap away, plus Enhance
+  flattened, colour kept. Original, Greyscale, B&W and Document are one tap away
 - **Draw** and **Text** share a brush colour picker, presets, an eyedropper that samples
   straight off the page, and undo
 - **Text and signatures** — drag, resize, rotate. Signatures can be drawn on a pad or

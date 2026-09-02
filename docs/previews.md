@@ -37,7 +37,7 @@ The rules:
 - The function must be `@Composable` and **take no parameters** — the preview system has no
   way to supply them. (Except via `@PreviewParameter`, which feeds it a sample provider.)
 - It can be `private`, and normally lives at the bottom of the file it previews.
-- Wrap the content in your theme (`MinimalPdfTheme`) or it renders with default Material
+- Wrap the content in your theme (`ScanlyTheme`) or it renders with default Material
   colours and looks nothing like the app. Pass `dynamicColor = false` so the preview doesn't
   try to read the device wallpaper palette.
 - Stack multiple `@Preview` annotations on one function for variants — see the light/dark pair

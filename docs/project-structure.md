@@ -26,7 +26,7 @@ com/minimal/pdfcreate/
 ├── data/                  ── what a document IS, and how it is stored ──
 │   ├── Model.kt           ScanDocument, Page, Stroke, Overlay, Quad, FilterSettings
 │   ├── DocumentRepository.kt   reads/writes documents as JSON in the app's private folder
-│   └── PdfStore.kt        writes/lists/deletes PDFs in the shared Documents/minimalPdf folder
+│   └── PdfStore.kt        writes/lists/deletes PDFs in the shared Documents/Scanly folder
 │
 ├── imaging/               ── pixels ──
 │   ├── CaptureSaver.kt    turns the camera's JPEG bytes into an upright, sane-sized bitmap/file

@@ -30,6 +30,18 @@ object SignatureExtractor {
     private const val INK_ALPHA_FOR_BOUNDS = 0.4f
 
     /**
+     * Ink neighbours a pixel needs before it counts towards the bounds.
+     *
+     * Two, because that is what tells a stroke from a speck: ink runs, so even a hairline
+     * ascender one pixel wide has the pixel above and the pixel below it. A fleck of paper
+     * texture has nobody.
+     */
+    private const val MIN_NEIGHBOURS = 2
+
+    /** Share of the surviving ink still trimmed off each edge, for the odd noise cluster. */
+    private const val EDGE_TRIM = 0.002f
+
+    /**
      * @param sensitivity 0f..1f — higher picks up fainter pencil at the cost of more paper
      *                    texture and stray rules from lined paper.
      * @return a cropped, transparent-background bitmap, or null if no ink was found.
@@ -48,23 +60,19 @@ object SignatureExtractor {
         val floor = 55f - sensitivity.coerceIn(0f, 1f) * 45f
 
         val px = IntArray(w * h)
-        var minX = w; var minY = h; var maxX = -1; var maxY = -1
+        val alpha = FloatArray(w * h)
         for (y in 0 until h) {
             for (x in 0 until w) {
                 val i = y * w + x
                 val darkness = integral.mean(x, y, radius) - grey[i]
-                val alpha = ((darkness - floor) / SOFTNESS).coerceIn(0f, 1f)
-                px[i] = ((alpha * 255f).roundToInt() shl 24)   // black ink, variable alpha
-                if (alpha >= INK_ALPHA_FOR_BOUNDS) {
-                    if (x < minX) minX = x
-                    if (x > maxX) maxX = x
-                    if (y < minY) minY = y
-                    if (y > maxY) maxY = y
-                }
+                val a = ((darkness - floor) / SOFTNESS).coerceIn(0f, 1f)
+                alpha[i] = a
+                px[i] = ((a * 255f).roundToInt() shl 24)   // black ink, variable alpha
             }
         }
         if (work !== src) work.recycle()
-        if (maxX < minX || maxY < minY) return null
+
+        val (minX, minY, maxX, maxY) = inkBounds(alpha, w, h) ?: return null
 
         // Trim to the ink, with a small breathing margin.
         val padX = ((maxX - minX) * 0.04f).toInt() + 4
@@ -82,6 +90,77 @@ object SignatureExtractor {
             System.arraycopy(px, (y0 + y) * w + x0, out, y * outW, outW)
         }
         return Bitmap.createBitmap(out, outW, outH, Bitmap.Config.ARGB_8888)
+    }
+
+    /** Left, top, right, bottom of the ink, inclusive. Destructured by [extract]. */
+    internal data class Bounds(val minX: Int, val minY: Int, val maxX: Int, val maxY: Int)
+
+    /**
+     * Where the ink actually is, ignoring speckle.
+     *
+     * The obvious version — the bounding box of every pixel above [INK_ALPHA_FOR_BOUNDS] —
+     * is decided by its four most extreme pixels, so a single fleck of paper texture in a
+     * corner stretches the box to that corner. Raising the ink sensitivity produces exactly
+     * such flecks, which is why the result would suddenly balloon to the whole selection
+     * while the slider moved.
+     *
+     * So a pixel only votes if it has [MIN_NEIGHBOURS] ink neighbours — it has to be part of
+     * a stroke, not a lone dot — and then the surviving ink is projected onto each axis and
+     * the outermost [EDGE_TRIM] of its mass trimmed, which catches the occasional noise
+     * cluster that is big enough to support itself.
+     */
+    internal fun inkBounds(alpha: FloatArray, w: Int, h: Int): Bounds? {
+        val rows = FloatArray(h)
+        val cols = FloatArray(w)
+        var total = 0f
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val a = alpha[y * w + x]
+                if (a < INK_ALPHA_FOR_BOUNDS) continue
+                var neighbours = 0
+                for (dy in -1..1) {
+                    for (dx in -1..1) {
+                        if (dx == 0 && dy == 0) continue
+                        val nx = x + dx
+                        val ny = y + dy
+                        if (nx !in 0 until w || ny !in 0 until h) continue
+                        if (alpha[ny * w + nx] >= INK_ALPHA_FOR_BOUNDS) neighbours++
+                    }
+                }
+                if (neighbours < MIN_NEIGHBOURS) continue
+                rows[y] += a
+                cols[x] += a
+                total += a
+            }
+        }
+        if (total <= 0f) return null
+
+        val drop = total * EDGE_TRIM
+
+        fun first(profile: FloatArray): Int {
+            var run = 0f
+            for (i in profile.indices) {
+                run += profile[i]
+                if (run > drop) return i
+            }
+            return profile.size - 1
+        }
+
+        fun last(profile: FloatArray): Int {
+            var run = 0f
+            for (i in profile.indices.reversed()) {
+                run += profile[i]
+                if (run > drop) return i
+            }
+            return 0
+        }
+
+        val minX = first(cols)
+        val maxX = last(cols)
+        val minY = first(rows)
+        val maxY = last(rows)
+        if (maxX < minX || maxY < minY) return null
+        return Bounds(minX, minY, maxX, maxY)
     }
 
     /** PNG keeps the alpha channel; JPEG would flatten it onto black. */

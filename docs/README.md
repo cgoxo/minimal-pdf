@@ -1,4 +1,4 @@
-# MinimalPDF documentation
+# Scanly documentation
 
 Written for someone who has never built an Android app. Read it in this order, or
 jump to whatever you need.

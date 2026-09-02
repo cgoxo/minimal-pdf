@@ -25,7 +25,7 @@ assembleDebug --stacktrace` gives more.
 `com.minimal.pdfcreate` is your bug.
 
 **Camera preview is black** — check the permission was actually granted
-(Settings → Apps → MinimalPDF → Permissions), and that no other app is holding the camera.
+(Settings → Apps → Scanly → Permissions), and that no other app is holding the camera.
 
 **No green quad appears** — that's the detector being honest. It needs a page whose edges
 actually contrast with what's underneath: white paper on a dark desk works, white paper on a

@@ -46,8 +46,6 @@ data class FilterSettings(
     val contrast: Float = 1f,
     val saturation: Float = 1f,
     val threshold: Float = 0.5f,
-    /** Unsharp-mask strength, 0f = off. Makes faint pen and small print legible. */
-    val sharpen: Float = 0f,
 )
 
 /** One freehand brush stroke. Width is normalised against the image width. */
@@ -102,7 +100,7 @@ data class ScanDocument(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val pages: List<Page> = emptyList(),
-    /** Display name of the exported file inside Documents/minimalPdf, once exported. */
+    /** Display name of the exported file inside Documents/Scanly, once exported. */
     val pdfFileName: String? = null,
 ) {
     fun page(pageId: String): Page? = pages.firstOrNull { it.id == pageId }

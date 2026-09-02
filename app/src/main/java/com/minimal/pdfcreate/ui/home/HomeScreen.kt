@@ -75,7 +75,7 @@ import com.minimal.pdfcreate.data.PdfStore
 import com.minimal.pdfcreate.data.ScanDocument
 import com.minimal.pdfcreate.imaging.Importer
 import com.minimal.pdfcreate.ui.common.PageThumbnail
-import com.minimal.pdfcreate.ui.theme.MinimalPdfTheme
+import com.minimal.pdfcreate.ui.theme.ScanlyTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -142,7 +142,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("MinimalPDF") },
+                title = { Text("Scanly") },
                 actions = {
                     Text(
                         "Documents/${PdfStore.FOLDER}",
@@ -409,7 +409,7 @@ private val SampleDocument = ScanDocument(
 )
 @Composable
 private fun DocumentCardPreview() {
-    MinimalPdfTheme(dynamicColor = false) {
+    ScanlyTheme(dynamicColor = false) {
         Surface {
             Box(Modifier.padding(12.dp)) {
                 DocumentCard(
@@ -424,7 +424,7 @@ private fun DocumentCardPreview() {
 @Preview(name = "Document card · draft", showBackground = true, widthDp = 380)
 @Composable
 private fun DraftCardPreview() {
-    MinimalPdfTheme(dynamicColor = false) {
+    ScanlyTheme(dynamicColor = false) {
         Surface {
             Box(Modifier.padding(12.dp)) {
                 DocumentCard(
@@ -439,7 +439,7 @@ private fun DraftCardPreview() {
 @Preview(name = "Home · empty", showBackground = true, widthDp = 380, heightDp = 360)
 @Composable
 private fun EmptyStatePreview() {
-    MinimalPdfTheme(dynamicColor = false) {
+    ScanlyTheme(dynamicColor = false) {
         Surface { EmptyState(Modifier.fillMaxSize()) }
     }
 }

@@ -181,8 +181,7 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
 
     // B&W / Document / Colour doc need per-pixel work, so they run off the main thread. The
     // tone-only modes are previewed for free by handing a ColorFilter to drawImage.
-    val toneOnly = (filter.mode == FilterMode.ORIGINAL || filter.mode == FilterMode.GRAYSCALE) &&
-        filter.sharpen <= 0.01f
+    val toneOnly = filter.mode == FilterMode.ORIGINAL || filter.mode == FilterMode.GRAYSCALE
 
     // A small copy of the page, kept alongside the full one. Filtering 1600px costs a few
     // hundred milliseconds — fine once, hopeless sixty times a second — so the slider drags

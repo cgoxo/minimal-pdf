@@ -12,7 +12,7 @@ import java.util.UUID
  * Documents live entirely in app-private storage as
  * `filesDir/docs/<docId>/{manifest.json, page_*.jpg}`.
  *
- * Only the *exported* PDF is written to the public Documents/minimalPdf folder, so the
+ * Only the *exported* PDF is written to the public Documents/Scanly folder, so the
  * editable project survives without needing any storage permission.
  */
 class DocumentRepository(context: Context) {
@@ -52,7 +52,7 @@ class DocumentRepository(context: Context) {
 
     /**
      * Drops [ScanDocument.pdfFileName] for any document whose exported PDF is no longer in
-     * `Documents/minimalPdf`.
+     * `Documents/Scanly`.
      *
      * The folder is a public one: the user can delete a PDF from Files, from a desktop over
      * USB, or from anywhere else, and nothing tells us when they do. Without this the card
@@ -68,6 +68,14 @@ class DocumentRepository(context: Context) {
         if (docs.none { it.pdfFileName != null }) return docs
         val present = runCatching { PdfStore.list(appContext).mapTo(HashSet()) { it.displayName } }
             .getOrElse { return docs }  // Query failed: assume nothing is missing.
+
+        // Seeing *nothing* when documents claim to be exported is far more likely to mean the
+        // query cannot see the folder — an ownership quirk, a storage volume not mounted yet —
+        // than that the user deleted every PDF at once. Demoting every document on the
+        // strength of an empty answer would be the worst possible reading of it, so an empty
+        // result is treated as no information rather than as bad news. The viewer's
+        // "Back to draft" button still rescues the one document the user actually opens.
+        if (present.isEmpty()) return docs
         return docs.map { doc ->
             val name = doc.pdfFileName
             if (name == null || name in present) {

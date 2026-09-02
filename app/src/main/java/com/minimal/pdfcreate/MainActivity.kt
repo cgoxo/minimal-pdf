@@ -13,7 +13,7 @@ import com.minimal.pdfcreate.ui.camera.CameraScreen
 import com.minimal.pdfcreate.ui.editor.PageEditorScreen
 import com.minimal.pdfcreate.ui.home.HomeScreen
 import com.minimal.pdfcreate.ui.review.ReviewScreen
-import com.minimal.pdfcreate.ui.theme.MinimalPdfTheme
+import com.minimal.pdfcreate.ui.theme.ScanlyTheme
 import com.minimal.pdfcreate.ui.viewer.PdfViewerScreen
 
 object Routes {
@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         AppContainer.init(this)
         setContent {
-            MinimalPdfTheme {
+            ScanlyTheme {
                 AppNavHost(rememberNavController())
             }
         }

@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MinimalPdf"
+rootProject.name = "Scanly"
 include(":app")

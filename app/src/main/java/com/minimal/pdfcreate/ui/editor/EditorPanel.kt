@@ -74,7 +74,7 @@ import com.minimal.pdfcreate.data.Overlay
 import com.minimal.pdfcreate.imaging.PageRenderer
 import com.minimal.pdfcreate.ui.common.ColorPickerDialog
 import com.minimal.pdfcreate.ui.common.SWATCHES
-import com.minimal.pdfcreate.ui.theme.MinimalPdfTheme
+import com.minimal.pdfcreate.ui.theme.ScanlyTheme
 import java.io.File
 import java.io.FileOutputStream
 
@@ -185,11 +185,6 @@ private fun FilterPanel(filter: FilterSettings, onFilter: (FilterSettings) -> Un
                 LabelledSlider("Saturation", filter.saturation, 0f..2f) {
                     onFilter(filter.copy(saturation = it))
                 }
-            }
-        }
-        if (filter.mode != FilterMode.BW) {
-            LabelledSlider("Enhance (sharpen)", filter.sharpen, 0f..1f) {
-                onFilter(filter.copy(sharpen = it))
             }
         }
     }
@@ -650,7 +645,7 @@ private fun writeSignature(paths: List<List<Offset>>, srcW: Float, srcH: Float, 
 
 @Composable
 private fun PanelPreview(content: @Composable () -> Unit) {
-    MinimalPdfTheme(dynamicColor = false) {
+    ScanlyTheme(dynamicColor = false) {
         Surface(tonalElevation = 2.dp) {
             Box(Modifier.padding(12.dp)) { content() }
         }

@@ -18,7 +18,7 @@ edge detection wants and costs nothing to obtain. It goes to `EdgeDetector.detec
 direction" filter), then a **Hough transform** to turn those edge pixels into actual straight
 lines, and finally picks the strongest two vertical and two horizontal lines and intersects
 them into four corners. If the result looks implausible it returns `null` instead of
-guessing. The maths is explained in `01-notes.md` in the Obsidian vault.
+guessing. 
 
 **4. You see the green quad.** The four corners come back in **normalised coordinates** —
 `(0,0)` is top-left of the frame, `(1,1)` is bottom-right, regardless of pixel size. The
@@ -58,7 +58,7 @@ export is the `maxDim` argument. That is why everything is stored in normalised 
 onto a page of Android's own `PdfDocument`. PDF pages are measured in **points** (1/72 inch),
 so A4 is 595 × 842 no matter how many pixels your scan has.
 
-**10. The file lands in `Documents/minimalPdf`.** `PdfStore.kt` does this through
+**10. The file lands in `Documents/Scanly`.** `PdfStore.kt` does this through
 **MediaStore**, Android's index of shared media, which is the sanctioned way to write into a
 public folder without asking for storage permission.
 
@@ -103,7 +103,7 @@ Five tabs over a single drawing surface:
 
 | Tab | Does |
 |---|---|
-| **Filter** | Original / Greyscale / B&W / Document. Original and Greyscale get brightness, contrast and saturation; **B&W and Document get a single "Ink sensitivity" knob** instead — they are ink decisions, not tone curves, so three sliders was two too many. Every mode except B&W also has **Enhance (sharpen)** |
+| **Filter** | Colour doc (the default) / Original / Greyscale / B&W / Document. Original and Greyscale get brightness, contrast and saturation; **Colour doc, B&W and Document get a single "Ink sensitivity" knob** instead — they are ink decisions, not tone curves, so three sliders was two too many |
 | **Draw** | Freehand brush: a **Colour** button opening a full hue + saturation/value picker, a row of one-tap preset swatches, **Pick from image** (an eyedropper — press and hold the page; a loupe shows the colour under your finger, slide to adjust, lift to accept), size slider, undo, clear |
 | **Text** | Add a text box, drag it, change its size and colour. Tap it to select: a dashed frame appears with a red **✕** on the top-right corner to delete it and a green **grip** on the bottom-right to resize by dragging |
 | **Sign** | Same on-page frame — drag to move, corner grip to resize, ✕ to delete — plus a rotation slider and ±90° buttons. Saved signatures can be deleted from the strip with their own ✕. Two ways to get a signature: **Draw** it on a pad with your finger, or **Scan from paper** — photograph a signature written on paper and the app lifts the ink off the page. Either way it is saved as a reusable transparent PNG that can be dropped on any page and resized |
