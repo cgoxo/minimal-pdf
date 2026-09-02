@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -36,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -132,15 +135,30 @@ fun PdfViewerScreen(docId: String, onBack: () -> Unit) {
         }
     ) { padding ->
         if (source == null || source.pageCount == 0) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Text(
                     if (doc?.pages.isNullOrEmpty()) {
                         "This document has no pages.\nAdd pages and save it again."
                     } else {
-                        "Could not open this PDF."
+                        "The exported PDF is missing — it was probably deleted from " +
+                            "Documents/${PdfStore.FOLDER}."
                     },
                     color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
                 )
+                // The pages themselves live in private storage and are untouched, so this is
+                // recoverable: forget the export and the document goes back to being a draft
+                // that can be saved again. Without this the card is a dead end.
+                if (doc != null && doc.pages.isNotEmpty()) {
+                    Button(
+                        onClick = { repo.save(doc.copy(pdfFileName = null)); onBack() },
+                        modifier = Modifier.padding(top = 20.dp),
+                    ) { Text("Back to draft") }
+                }
             }
             return@Scaffold
         }

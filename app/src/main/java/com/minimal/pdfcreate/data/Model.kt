@@ -19,15 +19,29 @@ data class Quad(val tl: PointN, val tr: PointN, val br: PointN, val bl: PointN) 
     }
 }
 
-enum class FilterMode { ORIGINAL, GRAYSCALE, BW, DOCUMENT }
+/**
+ * [COLOR_DOC] is [DOCUMENT]'s colour sibling: same shadow-flattening, but the lift is applied
+ * to all three channels at once so stamps, highlighter and letterheads keep their colour while
+ * the paper still goes white. Appended rather than inserted — the manifest stores these by
+ * name, so order is free to change, but keeping it stable keeps the chip row stable too.
+ */
+enum class FilterMode { ORIGINAL, GRAYSCALE, BW, DOCUMENT, COLOR_DOC }
 
 /**
  * Tone controls. [brightness] is an offset in -1f..1f, [contrast] a multiplier around the
- * mid grey, [threshold] only matters for [FilterMode.BW] / [FilterMode.DOCUMENT].
+ * mid grey, [threshold] only matters for [FilterMode.BW] / [FilterMode.DOCUMENT] /
+ * [FilterMode.COLOR_DOC].
  */
 @Serializable
 data class FilterSettings(
-    val mode: FilterMode = FilterMode.ORIGINAL,
+    /**
+     * A capture defaults to the colour scan, not the raw camera frame — this is a scanner, and
+     * a photo of a page is the starting material rather than the result. Colour rather than
+     * [FilterMode.DOCUMENT] because throwing colour away is the one thing the user cannot undo
+     * by eye: a stamp, a highlight or a signature in blue ink should still be there by default.
+     * The Original chip puts the camera's own image back whenever it was the better one.
+     */
+    val mode: FilterMode = FilterMode.COLOR_DOC,
     val brightness: Float = 0f,
     val contrast: Float = 1f,
     val saturation: Float = 1f,

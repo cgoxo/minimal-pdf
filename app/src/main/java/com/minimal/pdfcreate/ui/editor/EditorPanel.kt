@@ -24,7 +24,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Colorize
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.RotateLeft
@@ -38,6 +40,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -102,7 +112,10 @@ fun EditorPanel(
             brushColor, onBrushColor, brushWidth, onBrushWidth,
             eyedropperOn, onToggleEyedropper, canUndo, onUndo, onClearStrokes,
         )
-        EditorTab.TEXT -> TextPanel(textColor, onTextColor, textSize, onTextSize, onAddText, selected, onUpdateOverlay, onDeleteOverlay)
+        EditorTab.TEXT -> TextPanel(
+            textColor, onTextColor, textSize, onTextSize, onAddText,
+            eyedropperOn, onToggleEyedropper, selected, onUpdateOverlay, onDeleteOverlay,
+        )
         EditorTab.SIGN -> SignPanel(onAddSignature, selected, onUpdateOverlay, onDeleteOverlay)
         EditorTab.CROP -> CropPanel(onAutoDetect, onResetCrop, onRotate)
     }
@@ -126,6 +139,7 @@ private fun FilterPanel(filter: FilterSettings, onFilter: (FilterSettings) -> Un
                                 FilterMode.GRAYSCALE -> "Greyscale"
                                 FilterMode.BW -> "B&W"
                                 FilterMode.DOCUMENT -> "Document"
+                                FilterMode.COLOR_DOC -> "Colour doc"
                             }
                         )
                     },
@@ -135,12 +149,18 @@ private fun FilterPanel(filter: FilterSettings, onFilter: (FilterSettings) -> Un
         when (filter.mode) {
             // B&W and Document are ink decisions, not tone curves: one knob is the whole
             // control surface. Left = cleaner paper, right = keeps fainter marks.
-            FilterMode.BW, FilterMode.DOCUMENT -> {
+            // Three ink decisions, one knob each. Left = cleaner paper, right = keeps fainter
+            // marks; nothing else on this tab would tell you anything the preview does not.
+            FilterMode.BW, FilterMode.DOCUMENT, FilterMode.COLOR_DOC -> {
                 LabelledSlider("Ink sensitivity", filter.threshold, 0.1f..0.95f) {
                     onFilter(filter.copy(threshold = it))
                 }
                 Text(
-                    "Drag left for whiter paper, right to keep faint pencil and thin strokes.",
+                    if (filter.mode == FilterMode.COLOR_DOC) {
+                        "Whitens the paper and flattens shadows, but keeps colour."
+                    } else {
+                        "Drag left for whiter paper, right to keep faint pencil and thin strokes."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -194,34 +214,16 @@ private fun DrawPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // A labelled button, because a bare colour dot reads as decoration, not a control.
-            Button(onClick = { picking = true }) {
-                Box(
-                    Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(brushColor)
-                        .border(1.dp, Color.White, CircleShape)
-                )
-                Text("  Colour")
-            }
+            ColourAction(brushColor, "Colour") { picking = true }
             // Eyedropper: take the brush colour from the page itself.
-            if (eyedropperOn) {
-                Button(onClick = onToggleEyedropper) {
-                    Icon(Icons.Default.Colorize, null)
-                    Text("  Tap the page")
-                }
-            } else {
-                OutlinedButton(onClick = onToggleEyedropper) {
-                    Icon(Icons.Default.Colorize, null)
-                    Text("  Pick from image")
-                }
-            }
-            OutlinedButton(onClick = onUndo, enabled = canUndo) {
-                Icon(Icons.Default.Undo, null)
-                Text("  Undo")
-            }
-            OutlinedButton(onClick = onClear, enabled = canUndo) { Text("Clear") }
+            IconAction(
+                icon = Icons.Default.Colorize,
+                label = if (eyedropperOn) "Tap the page" else "Pick from image",
+                onClick = onToggleEyedropper,
+                active = eyedropperOn,
+            )
+            IconAction(Icons.Default.Undo, "Undo", onUndo, enabled = canUndo)
+            IconAction(Icons.Default.DeleteSweep, "Clear all strokes", onClear, enabled = canUndo)
         }
 
         // One-tap presets for the common cases; the button above covers everything else.
@@ -261,6 +263,8 @@ private fun TextPanel(
     textSize: Float,
     onTextSize: (Float) -> Unit,
     onAddText: (String) -> Unit,
+    eyedropperOn: Boolean,
+    onToggleEyedropper: () -> Unit,
     selected: Overlay?,
     onUpdate: (Overlay) -> Unit,
     onDelete: (String) -> Unit,
@@ -275,24 +279,20 @@ private fun TextPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Button(onClick = { typing = true }) { Text("Add text") }
-            // Same labelled control as the Draw tab, for the same reason: a bare dot does not
-            // look like something you can press.
-            Button(onClick = { picking = true }) {
-                Box(
-                    Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(selectedText?.let { Color(it.color.toInt()) } ?: textColor)
-                        .border(1.dp, Color.White, CircleShape)
-                )
-                Text("  Colour")
+            IconAction(Icons.Default.TextFields, "Add text", { typing = true }, active = true)
+            ColourAction(selectedText?.let { Color(it.color.toInt()) } ?: textColor, "Colour") {
+                picking = true
             }
+            // Text gets the same sampler the brush has: matching a caption to a colour already
+            // on the page is far easier than finding it again in the picker.
+            IconAction(
+                icon = Icons.Default.Colorize,
+                label = if (eyedropperOn) "Tap the page" else "Pick from image",
+                onClick = onToggleEyedropper,
+                active = eyedropperOn,
+            )
             if (selectedText != null) {
-                OutlinedButton(onClick = { onDelete(selectedText.id) }) {
-                    Icon(Icons.Default.Delete, null)
-                    Text("  Remove")
-                }
+                IconAction(Icons.Default.Delete, "Remove", { onDelete(selectedText.id) })
             }
         }
         LabelledSlider(
@@ -359,19 +359,10 @@ private fun SignPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Button(onClick = { drawing = true }) {
-                Icon(Icons.Default.Draw, null)
-                Text("  Draw")
-            }
-            Button(onClick = { scanning = true }) {
-                Icon(Icons.Default.PhotoCamera, null)
-                Text("  Scan from paper")
-            }
+            IconAction(Icons.Default.Draw, "Draw a signature", { drawing = true }, active = true)
+            IconAction(Icons.Default.PhotoCamera, "Scan from paper", { scanning = true }, active = true)
             if (selectedSig != null) {
-                OutlinedButton(onClick = { onDelete(selectedSig.id) }) {
-                    Icon(Icons.Default.Delete, null)
-                    Text("  Remove")
-                }
+                IconAction(Icons.Default.Delete, "Remove", { onDelete(selectedSig.id) })
             }
         }
         if (saved.isNotEmpty()) {
@@ -419,9 +410,15 @@ private fun SignPanel(
             }
         }
         if (selectedSig != null) {
-            LabelledSlider("Signature width", selectedSig.widthN, 0.1f..0.9f) {
-                onUpdate(selectedSig.copy(widthN = it))
-            }
+            // No width slider: sizing a signature is a direct-manipulation job, so it happens
+            // on the page itself via the corner handle. A slider down here means looking away
+            // from the thing you are sizing.
+            Text(
+                "Drag the signature to move it, or its corner handle to resize.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
             LabelledSlider(
                 label = "Rotation",
                 value = selectedSig.rotation,
@@ -484,6 +481,56 @@ private fun CropPanel(onAutoDetect: () -> Unit, onResetCrop: () -> Unit, onRotat
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
+    }
+}
+
+/**
+ * An icon-only control whose name appears on tap-and-hold.
+ *
+ * The panels are a horizontal strip on a phone, and spelling every action out pushed half of
+ * them off the edge. Material's tooltip already owns the long-press gesture, so the label is
+ * not lost — just asked for.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IconAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    active: Boolean = false,
+) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = rememberTooltipState(),
+    ) {
+        if (active) {
+            FilledIconButton(onClick = onClick, enabled = enabled) { Icon(icon, label) }
+        } else {
+            OutlinedIconButton(onClick = onClick, enabled = enabled) { Icon(icon, label) }
+        }
+    }
+}
+
+/** The colour control: the swatch *is* the icon, so there is nothing to label but the hold. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ColourAction(colour: Color, label: String, onClick: () -> Unit) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = rememberTooltipState(),
+    ) {
+        OutlinedIconButton(onClick = onClick) {
+            Box(
+                Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(colour)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+            )
+        }
     }
 }
 
@@ -647,6 +694,8 @@ private fun TextPanelPreview() = PanelPreview {
         textSize = 0.05f,
         onTextSize = {},
         onAddText = {},
+        eyedropperOn = false,
+        onToggleEyedropper = {},
         selected = null,
         onUpdate = {},
         onDelete = {},

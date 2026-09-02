@@ -16,11 +16,16 @@ import com.minimal.pdfcreate.imaging.PageRenderer
  * PDF user space is in points (1/72 inch), so an A4 page is 595 x 842 regardless of the
  * bitmap resolution; the bitmap is embedded at its own pixel density and merely *placed*
  * into that rectangle, which is why a 2200 px scan still prints sharp.
+ *
+ * Every page is a real A4 sheet (portrait, or landscape for a wider-than-tall scan) with the
+ * scan centred inside a small margin. Sizing each page to its own scan instead would give a
+ * PDF whose sheets are all slightly different shapes, which prints and reads badly.
  */
 object PdfExporter {
 
     private const val A4_WIDTH_PT = 595
     private const val A4_HEIGHT_PT = 842
+    private const val MARGIN_PT = 18
 
     fun export(context: Context, repo: DocumentRepository, doc: ScanDocument): Uri {
         require(doc.pages.isNotEmpty()) { "Refusing to export a document with no pages" }
@@ -29,25 +34,24 @@ object PdfExporter {
             doc.pages.forEachIndexed { index, page ->
                 val bitmap = PageRenderer.render(repo, doc.id, page, PageRenderer.EXPORT_DIM)
 
-                // The page is cut to the *scan's* proportions rather than forced onto a fixed
-                // A4 sheet, and the image is drawn edge to edge. Anything else would frame the
-                // scan in white, which is exactly what a scanner should never do.
-                val (pageWidth, pageHeight) = if (bitmap == null) {
-                    A4_WIDTH_PT to A4_HEIGHT_PT
-                } else {
-                    val scale = minOf(
-                        A4_WIDTH_PT.toFloat() / bitmap.width,
-                        A4_HEIGHT_PT.toFloat() / bitmap.height,
-                    )
-                    (bitmap.width * scale).toInt().coerceAtLeast(1) to
-                        (bitmap.height * scale).toInt().coerceAtLeast(1)
-                }
+                // A landscape scan gets a landscape A4 rather than being shrunk to fit the
+                // width of a portrait one, so a sideways page still fills the sheet.
+                val landscape = bitmap != null && bitmap.width > bitmap.height
+                val pageWidth = if (landscape) A4_HEIGHT_PT else A4_WIDTH_PT
+                val pageHeight = if (landscape) A4_WIDTH_PT else A4_HEIGHT_PT
 
                 val info = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
                 val pdfPage = pdf.startPage(info)
                 if (bitmap != null) {
+                    val availW = pageWidth - 2 * MARGIN_PT
+                    val availH = pageHeight - 2 * MARGIN_PT
+                    val scale = minOf(availW.toFloat() / bitmap.width, availH.toFloat() / bitmap.height)
+                    val drawW = (bitmap.width * scale).toInt().coerceAtLeast(1)
+                    val drawH = (bitmap.height * scale).toInt().coerceAtLeast(1)
+                    val left = (pageWidth - drawW) / 2
+                    val top = (pageHeight - drawH) / 2
                     pdfPage.canvas.drawBitmap(
-                        bitmap, null, Rect(0, 0, pageWidth, pageHeight),
+                        bitmap, null, Rect(left, top, left + drawW, top + drawH),
                         Paint(Paint.FILTER_BITMAP_FLAG)
                     )
                     bitmap.recycle()

@@ -1,5 +1,11 @@
 package com.minimal.pdfcreate.ui.review
 
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,9 +26,14 @@ import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.minimal.pdfcreate.imaging.Importer
 import com.minimal.pdfcreate.AppContainer
 import com.minimal.pdfcreate.data.ScanDocument
 import com.minimal.pdfcreate.pdf.PdfExporter
@@ -54,6 +66,9 @@ import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
 
 /** Page list for the current document: reorder, delete, jump into the editor, export. */
+/** Matches the home screen's cap; the picker's own limit still wins if it is lower. */
+private const val MAX_IMPORT_IMAGES = 30
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReviewScreen(
@@ -69,6 +84,35 @@ fun ReviewScreen(
 
     var doc by remember { mutableStateOf<ScanDocument?>(null) }
     var exporting by remember { mutableStateOf(false) }
+    var addMenuOpen by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
+
+    /** Imports into *this* document, then re-reads it so the new pages appear in the strip. */
+    fun runImport(work: suspend () -> Int) {
+        if (importing) return
+        importing = true
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { work() } }
+            doc = repo.get(docId)
+            importing = false
+        }
+    }
+
+    val maxImages = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            minOf(MAX_IMPORT_IMAGES, MediaStore.getPickImagesMaxLimit())
+        } else {
+            MAX_IMPORT_IMAGES
+        }
+    }
+    val pickImages = rememberLauncherForActivityResult(
+        remember(maxImages) { ActivityResultContracts.PickMultipleVisualMedia(maxImages) }
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) runImport { Importer.importImages(context, repo, docId, uris) }
+    }
+    val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) runImport { Importer.importPdf(context, repo, docId, uri) }
+    }
 
     LaunchedEffect(docId) { doc = repo.get(docId) }
 
@@ -88,9 +132,52 @@ fun ReviewScreen(
                     Modifier.fillMaxWidth().padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    OutlinedButton(onClick = onAddPages, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.AddAPhoto, null)
-                        Text("  Add pages")
+                    Box(Modifier.weight(1f)) {
+                        OutlinedButton(
+                            onClick = { addMenuOpen = true },
+                            enabled = !importing,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (importing) {
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.AddAPhoto, null)
+                                Text("  Add pages")
+                            }
+                        }
+                        // The same three routes the home screen offers. Pages can arrive
+                        // mid-document too, and having to back out to the home screen to
+                        // import one is the kind of gap that makes an app feel unfinished.
+                        DropdownMenu(
+                            expanded = addMenuOpen,
+                            onDismissRequest = { addMenuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Scan pages") },
+                                leadingIcon = { Icon(Icons.Default.PhotoCamera, null) },
+                                onClick = { addMenuOpen = false; onAddPages() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Import images") },
+                                leadingIcon = { Icon(Icons.Default.Image, null) },
+                                onClick = {
+                                    addMenuOpen = false
+                                    pickImages.launch(
+                                        PickVisualMediaRequest(
+                                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                                        )
+                                    )
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Import PDF") },
+                                leadingIcon = { Icon(Icons.Default.PictureAsPdf, null) },
+                                onClick = {
+                                    addMenuOpen = false
+                                    pickPdf.launch(arrayOf("application/pdf"))
+                                },
+                            )
+                        }
                     }
                     Button(
                         onClick = {

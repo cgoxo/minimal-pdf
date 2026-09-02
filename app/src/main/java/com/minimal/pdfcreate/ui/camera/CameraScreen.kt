@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -33,6 +34,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -95,6 +98,10 @@ fun CameraScreen(docId: String, onDone: () -> Unit, onBack: () -> Unit) {
 
     var pages by remember { mutableStateOf(repo.get(docId)?.pages ?: emptyList()) }
     var detected by remember { mutableStateOf<Quad?>(null) }
+    // Held only to ask whether there is a flash unit at all; a front camera or an emulator has
+    // none, in which case the button is not offered.
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    var flashOn by remember { mutableStateOf(false) }
     var frameAspect by remember { mutableStateOf(3f / 4f) }
     var capturing by remember { mutableStateOf(false) }
 
@@ -140,7 +147,7 @@ fun CameraScreen(docId: String, onDone: () -> Unit, onBack: () -> Unit) {
                 }
             }
             provider.unbindAll()
-            provider.bindToLifecycle(
+            camera = provider.bindToLifecycle(
                 lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture, analysis
             )
         }, ContextCompat.getMainExecutor(context))
@@ -156,6 +163,10 @@ fun CameraScreen(docId: String, onDone: () -> Unit, onBack: () -> Unit) {
     fun capture() {
         if (capturing) return
         capturing = true
+        // Flash fires with the shutter and nothing else. A torch left burning while you line
+        // the page up blinds the preview, cooks the battery, and is not what "flash" means.
+        imageCapture.flashMode =
+            if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
         val quadAtCapture = detected
         imageCapture.takePicture(captureExecutor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
@@ -222,6 +233,21 @@ fun CameraScreen(docId: String, onDone: () -> Unit, onBack: () -> Unit) {
                 .padding(16.dp)
                 .clickable { leave() },
         )
+
+        // Arms the flash for the next shutter press; the light itself only fires during the
+        // capture, so framing stays under whatever light the room has.
+        if (granted && camera?.cameraInfo?.hasFlashUnit() == true) {
+            Icon(
+                if (flashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                contentDescription = if (flashOn) "Flash on" else "Flash off",
+                tint = if (flashOn) Color(0xFF55E39B) else Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(16.dp)
+                    .clickable { flashOn = !flashOn },
+            )
+        }
 
         Row(
             Modifier

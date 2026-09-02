@@ -31,7 +31,8 @@ com/minimal/pdfcreate/
 ├── imaging/               ── pixels ──
 │   ├── CaptureSaver.kt    turns the camera's JPEG bytes into an upright, sane-sized bitmap/file
 │   ├── EdgeDetector.kt    finds the four corners of a page in a frame
-│   ├── Filters.kt         brightness/contrast/greyscale/B&W/document look
+│   ├── Filters.kt         brightness/contrast/greyscale/B&W/document/colour-doc look
+│   ├── Importer.kt        brings gallery images and existing PDFs in as editable pages
 │   ├── LocalMean.kt       greyscale + summed-area table: fast "how bright is the paper here?"
 │   ├── SignatureExtractor.kt  lifts ink off a photo of paper into a transparent PNG
 │   └── PageRenderer.kt    ⭐ the render pipeline everything else calls
