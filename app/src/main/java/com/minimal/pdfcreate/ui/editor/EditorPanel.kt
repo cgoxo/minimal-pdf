@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.Highlight
 import androidx.compose.material.icons.filled.RotateLeft
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Undo
@@ -98,6 +100,11 @@ fun EditorPanel(
     textSize: Float,
     onTextSize: (Float) -> Unit,
     onAddText: (String) -> Unit,
+    fieldCount: Int,
+    findingFields: Boolean,
+    fieldsSearched: Boolean,
+    onFindFields: () -> Unit,
+    onClearFields: () -> Unit,
     onAddSignature: (String) -> Unit,
     selected: Overlay?,
     onUpdateOverlay: (Overlay) -> Unit,
@@ -115,6 +122,7 @@ fun EditorPanel(
         EditorTab.TEXT -> TextPanel(
             textColor, onTextColor, textSize, onTextSize, onAddText,
             eyedropperOn, onToggleEyedropper, selected, onUpdateOverlay, onDeleteOverlay,
+            fieldCount, findingFields, fieldsSearched, onFindFields, onClearFields,
         )
         EditorTab.SIGN -> SignPanel(onAddSignature, selected, onUpdateOverlay, onDeleteOverlay)
         EditorTab.CROP -> CropPanel(onAutoDetect, onResetCrop, onRotate)
@@ -124,11 +132,24 @@ fun EditorPanel(
 @Composable
 private fun FilterPanel(filter: FilterSettings, onFilter: (FilterSettings) -> Unit) {
     Column {
+        // Presentation order, not declaration order: the chip row scrolls, and Colour doc —
+        // which is what every capture now arrives as — used to sit last, off the right-hand
+        // edge. The default filter being off screen with nothing visibly selected reads as
+        // the mode having gone missing.
+        val chipOrder = remember {
+            listOf(
+                FilterMode.COLOR_DOC,
+                FilterMode.ORIGINAL,
+                FilterMode.GRAYSCALE,
+                FilterMode.BW,
+                FilterMode.DOCUMENT,
+            )
+        }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilterMode.entries.forEach { mode ->
+            chipOrder.forEach { mode ->
                 FilterChip(
                     selected = filter.mode == mode,
                     onClick = { onFilter(filter.copy(mode = mode)) },
@@ -263,6 +284,11 @@ private fun TextPanel(
     selected: Overlay?,
     onUpdate: (Overlay) -> Unit,
     onDelete: (String) -> Unit,
+    fieldCount: Int,
+    findingFields: Boolean,
+    fieldsSearched: Boolean,
+    onFindFields: () -> Unit,
+    onClearFields: () -> Unit,
 ) {
     var picking by remember { mutableStateOf(false) }
     var typing by remember { mutableStateOf(false) }
@@ -289,19 +315,72 @@ private fun TextPanel(
             if (selectedText != null) {
                 IconAction(Icons.Default.Delete, "Remove", { onDelete(selectedText.id) })
             }
+            // Form filling: find the blanks, then tap one on the page to type into it.
+            if (fieldCount > 0) {
+                IconAction(Icons.Default.SearchOff, "Hide $fieldCount fields", onClearFields, active = true)
+            } else {
+                IconAction(
+                    icon = Icons.Default.Highlight,
+                    label = if (findingFields) "Looking for fields" else "Find blank fields",
+                    onClick = onFindFields,
+                    enabled = !findingFields,
+                )
+            }
         }
-        LabelledSlider(
-            label = if (selectedText != null) "Size (selected)" else "Size",
-            value = selectedText?.sizeN ?: textSize,
-            range = 0.02f..0.18f,
-        ) { v ->
-            if (selectedText != null) onUpdate(selectedText.copy(sizeN = v)) else onTextSize(v)
+        if (fieldCount > 0) {
+            Text(
+                "Tap a highlighted blank on the page to type into it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        } else if (fieldsSearched && !findingFields) {
+            Text(
+                "No blank lines or boxes found on this page.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
-        Text(
-            "Tap a text box on the page to select it, then drag to move.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+
+        // Size is a direct-manipulation job — the corner handle on the page does it, the same
+        // way signatures work — so the slider here is given to the thing you cannot drag.
+        if (selectedText != null) {
+            LabelledSlider(
+                label = "Rotation",
+                value = selectedText.rotation,
+                range = -180f..180f,
+                format = { "%.0f°".format(it) },
+            ) { onUpdate(selectedText.copy(rotation = it)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    onUpdate(selectedText.copy(rotation = wrapDegrees(selectedText.rotation - 90f)))
+                }) { Icon(Icons.Default.RotateLeft, "Rotate left") }
+                OutlinedButton(onClick = {
+                    onUpdate(selectedText.copy(rotation = wrapDegrees(selectedText.rotation + 90f)))
+                }) { Icon(Icons.Default.RotateRight, "Rotate right") }
+                OutlinedButton(onClick = { onUpdate(selectedText.copy(rotation = 0f)) }) { Text("Reset") }
+            }
+            Text(
+                "Drag the text to move it, or its corner handle to resize.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        } else {
+            // Nothing selected: the slider can only mean the size of the *next* box.
+            LabelledSlider(
+                label = "Size for new text",
+                value = textSize,
+                range = 0.02f..0.18f,
+                onChange = onTextSize,
+            )
+            Text(
+                "Tap a text box on the page to select it, then drag to move.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 
     if (picking) {
@@ -694,6 +773,11 @@ private fun TextPanelPreview() = PanelPreview {
         selected = null,
         onUpdate = {},
         onDelete = {},
+        fieldCount = 0,
+        findingFields = false,
+        fieldsSearched = false,
+        onFindFields = {},
+        onClearFields = {},
     )
 }
 

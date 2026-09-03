@@ -160,11 +160,29 @@ object PageRenderer {
                         textSize = overlay.sizeN * h
                         isFakeBoldText = false
                     }
-                    var y = overlay.posN.y * h
-                    for (line in overlay.text.split("\n")) {
-                        canvas.drawText(line, overlay.posN.x * w, y, textPaint)
+                    val lines = overlay.text.split("\n")
+                    val left = overlay.posN.x * w
+                    val top = overlay.posN.y * h
+                    val saved = canvas.save()
+                    if (overlay.rotation != 0f) {
+                        // Turn about the block's own middle, so rotating a label does not
+                        // also walk it across the page. The box — and therefore the centre —
+                        // is measured exactly as the editor's `overlayBounds` measures it,
+                        // or the exported page would not match what was on screen.
+                        val widest = lines.maxOf { textPaint.measureText(it) }
+                        val tall = textPaint.textSize * (0.3f + 1.2f * lines.size)
+                        canvas.rotate(
+                            overlay.rotation,
+                            left + widest / 2f,
+                            top - textPaint.textSize + tall / 2f,
+                        )
+                    }
+                    var y = top
+                    for (line in lines) {
+                        canvas.drawText(line, left, y, textPaint)
                         y += textPaint.textSize * 1.2f
                     }
+                    canvas.restoreToCount(saved)
                 }
 
                 is Overlay.Signature -> {

@@ -69,21 +69,50 @@ object Filters {
         return (0xFF shl 24) or (channel(0) shl 16) or (channel(5) shl 8) or channel(10)
     }
 
+    /** True when this matrix would copy every pixel to itself. */
+    private fun isIdentity(m: FloatArray): Boolean {
+        for (row in 0 until 4) {
+            for (col in 0 until 5) {
+                val expected = if (row == col) 1f else 0f
+                if (kotlin.math.abs(m[row * 5 + col] - expected) > 1e-4f) return false
+            }
+        }
+        return true
+    }
+
     /** Applies the full filter (tone matrix + any per-pixel mode) into a new bitmap. */
     fun apply(src: Bitmap, s: FilterSettings): Bitmap {
-        val toned = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
-        Canvas(toned).drawBitmap(src, 0f, 0f, Paint().apply {
-            isFilterBitmap = true
-            colorFilter = ColorMatrixColorFilter(matrixValues(s))
-        })
+        val matrix = matrixValues(s)
+        // Colour doc leaves the tone matrix alone, so this would otherwise allocate a second
+        // full bitmap and draw the whole image into it to change nothing. On the small bitmap
+        // the filter sliders preview against, that copy was a meaningful part of the cost of
+        // every single slider position.
+        val toned = if (isIdentity(matrix)) {
+            src
+        } else {
+            Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888).also { out ->
+                Canvas(out).drawBitmap(src, 0f, 0f, Paint().apply {
+                    isFilterBitmap = true
+                    colorFilter = ColorMatrixColorFilter(matrix)
+                })
+            }
+        }
+        // `toned` may now be `src` itself, which belongs to the caller — so it is only ever
+        // recycled when we made it.
+        val ownsToned = toned !== src
         val processed = when (s.mode) {
-            FilterMode.ORIGINAL, FilterMode.GRAYSCALE -> toned
-            FilterMode.BW -> binarise(toned, s.threshold).also { toned.recycle() }
-            FilterMode.DOCUMENT -> document(toned, s.threshold).also { toned.recycle() }
-            FilterMode.COLOR_DOC -> colourDocument(toned, s.threshold).also { toned.recycle() }
+            FilterMode.ORIGINAL, FilterMode.GRAYSCALE ->
+                if (ownsToned) toned else copyOf(toned)
+            FilterMode.BW -> binarise(toned, s.threshold).also { if (ownsToned) toned.recycle() }
+            FilterMode.DOCUMENT -> document(toned, s.threshold).also { if (ownsToned) toned.recycle() }
+            FilterMode.COLOR_DOC -> colourDocument(toned, s.threshold).also { if (ownsToned) toned.recycle() }
         }
         return processed
     }
+
+    /** Callers own and recycle what [apply] returns, so it must never hand back its input. */
+    private fun copyOf(src: Bitmap): Bitmap =
+        src.copy(src.config ?: Bitmap.Config.ARGB_8888, false) ?: src
 
     /** Global threshold — hard black/white, smallest files. */
     private fun binarise(src: Bitmap, threshold: Float): Bitmap {
@@ -143,7 +172,13 @@ object Filters {
         val h = src.height
         val px = IntArray(w * h)
         src.getPixels(px, 0, w, 0, 0, w, h)
-        val grey = greyscale(src)
+        // Luma is derived from the pixels already in hand. Calling `greyscale(src)` here would
+        // pull the whole image out of the bitmap a second time for no new information.
+        val grey = IntArray(w * h)
+        for (i in px.indices) {
+            val p = px[i]
+            grey[i] = (((p shr 16) and 0xFF) * 299 + ((p shr 8) and 0xFF) * 587 + (p and 0xFF) * 114) / 1000
+        }
         val integral = IntegralImage(grey, w, h)
         val radius = maxOf(8, minOf(w, h) / 16)
         val white = (200f + ink.coerceIn(0f, 1f) * 55f).toInt().coerceAtLeast(1)

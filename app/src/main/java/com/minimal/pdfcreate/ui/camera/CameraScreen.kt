@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -16,6 +17,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,10 +59,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.delay
 import androidx.core.content.ContextCompat
 import com.minimal.pdfcreate.AppContainer
 import com.minimal.pdfcreate.data.Page
@@ -71,6 +75,7 @@ import com.minimal.pdfcreate.ui.common.PageThumbnail
 import com.minimal.pdfcreate.ui.common.fittedRect
 import java.nio.ByteBuffer
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Live capture: CameraX Preview + ImageCapture + ImageAnalysis.
@@ -102,6 +107,8 @@ fun CameraScreen(docId: String, onDone: () -> Unit, onBack: () -> Unit) {
     // none, in which case the button is not offered.
     var camera by remember { mutableStateOf<Camera?>(null) }
     var flashOn by remember { mutableStateOf(false) }
+    // Where the user last tapped to focus, in preview pixels, so the ring can be drawn there.
+    var focusAt by remember { mutableStateOf<Offset?>(null) }
     var frameAspect by remember { mutableStateOf(3f / 4f) }
     var capturing by remember { mutableStateOf(false) }
 
@@ -198,7 +205,43 @@ fun CameraScreen(docId: String, onDone: () -> Unit, onBack: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (granted) {
-            AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier
+                    .fillMaxSize()
+                    // Tap to focus. Continuous autofocus hunts on a flat page — there is
+                    // little for it to lock onto until you tell it which part of the frame
+                    // you actually mean — so pointing at the text is what makes it sharp.
+                    .pointerInput(Unit) {
+                        detectTapGestures { tap ->
+                            val control = camera?.cameraControl ?: return@detectTapGestures
+                            val point = previewView.meteringPointFactory
+                                .createPoint(tap.x, tap.y)
+                            control.startFocusAndMetering(
+                                FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF)
+                                    .addPoint(point, FocusMeteringAction.FLAG_AE)
+                                    // Then hand control back, so moving to the next page does
+                                    // not stay locked on wherever the last one was.
+                                    .setAutoCancelDuration(4, TimeUnit.SECONDS)
+                                    .build()
+                            )
+                            focusAt = tap
+                        }
+                    },
+            )
+
+            // The ring fades itself out; a focus tap that leaves no mark feels like a tap the
+            // app ignored.
+            focusAt?.let { at ->
+                LaunchedEffect(at) {
+                    delay(900)
+                    focusAt = null
+                }
+                Canvas(Modifier.fillMaxSize()) {
+                    drawCircle(Color(0xFF55E39B), radius = 46f, center = at, style = Stroke(width = 3f))
+                    drawCircle(Color(0x3355E39B), radius = 46f, center = at)
+                }
+            }
 
             // Detected page boundary, mapped into the letterboxed preview area.
             Canvas(Modifier.fillMaxSize()) {

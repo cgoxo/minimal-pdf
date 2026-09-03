@@ -43,8 +43,8 @@ Small, quiet, and on your side. That is the friendly part.
 
 ## Features
 
-- **Scan** with live page-edge detection, a flash toggle, and drag the corners when it
-  guesses wrong
+- **Scan** with live page-edge detection, tap-to-focus, a flash toggle, and drag the corners
+  when it guesses wrong
 - **Import** photos from the gallery, or an existing PDF — its pages come in editable
 - **Filters** — captures land as **Colour doc** by default: paper whitened and shadows
   flattened, colour kept. Original, Greyscale, B&W and Document are one tap away
@@ -54,6 +54,9 @@ Small, quiet, and on your side. That is the friendly part.
   **scanned off paper**, with the ink lifted onto a transparent background
 - **Non-destructive** — pages store instructions, never flattened pixels, so any page of any
   document can be reopened and re-edited with every slider where you left it
+- **Fill a scanned form** — Scanly finds the blank rules and boxes on a page and lets you
+  tap one to type into it, skipping any it can see are already filled in
+- **Search** your documents, and select several at once to share or delete
 - **In-app viewer** — no hand-off to Drive or anything else
 - **A4 output** — every page is exported as a real A4 sheet, portrait or landscape
 - No ads, no accounts, no subscriptions, no analytics. One permission: `CAMERA`
@@ -94,6 +97,7 @@ platform rather than handed to a third-party SDK — **no OpenCV, no ML Kit, no 
 | | |
 |---|---|
 | Page detection | Sobel + a gradient-guided Hough transform, by hand, with edge-polarity and border-contrast checks to tell a page from what is printed on it |
+| Form-field detection | Local-mean ink mask, long thin horizontal runs merged into rules, rules paired into boxes, anything already written in discarded |
 | Perspective correction | `Matrix.setPolyToPoly` |
 | Filters | `ColorMatrix`, plus summed-area tables for local-mean work |
 | PDF writing | `android.graphics.pdf.PdfDocument` |

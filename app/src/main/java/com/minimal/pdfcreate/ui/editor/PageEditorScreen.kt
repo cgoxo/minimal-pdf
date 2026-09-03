@@ -28,6 +28,9 @@ import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
@@ -45,6 +48,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,11 +84,13 @@ import com.minimal.pdfcreate.data.PointN
 import com.minimal.pdfcreate.data.Quad
 import com.minimal.pdfcreate.data.Stroke
 import com.minimal.pdfcreate.imaging.EdgeDetector
+import com.minimal.pdfcreate.imaging.FieldDetector
 import com.minimal.pdfcreate.imaging.Filters
 import com.minimal.pdfcreate.imaging.PageRenderer
 import com.minimal.pdfcreate.ui.common.fittedRect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.PI
@@ -128,6 +134,12 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
     var pickColor by remember { mutableStateOf(Color.Transparent) }
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
+    // Blank places on a scanned form that can be tapped to type into. Empty until asked for.
+    var fields by remember(docId, pageId) { mutableStateOf<List<FieldDetector.Field>>(emptyList()) }
+    var findingFields by remember { mutableStateOf(false) }
+    var fieldsSearched by remember(docId, pageId) { mutableStateOf(false) }
+    var fillTarget by remember { mutableStateOf<FieldDetector.Field?>(null) }
+    val scope = rememberCoroutineScope()
 
     // Signature PNGs, decoded once. Previously every redraw decoded them from disk, which
     // made dragging one feel like wading through treacle.
@@ -148,6 +160,7 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
     // stopped working once the list started updating on every move event.
     val currentOverlays by rememberUpdatedState(overlays)
     val currentSelection by rememberUpdatedState(selectedOverlay)
+    val currentFields by rememberUpdatedState(fields)
 
     val density = LocalDensity.current
     val handleRadius = with(density) { 13.dp.toPx() }
@@ -268,6 +281,27 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                                 overlays = overlays + overlay
                                 selectedOverlay = overlay.id
                             },
+                            fieldCount = fields.size,
+                            findingFields = findingFields,
+                            fieldsSearched = fieldsSearched,
+                            onFindFields = {
+                                if (!findingFields) {
+                                    findingFields = true
+                                    scope.launch {
+                                        val src = baseBitmap
+                                        val found = if (src == null) emptyList() else {
+                                            withContext(Dispatchers.Default) {
+                                                runCatching { FieldDetector.detect(src) }
+                                                    .getOrDefault(emptyList())
+                                            }
+                                        }
+                                        fields = found
+                                        fieldsSearched = true
+                                        findingFields = false
+                                    }
+                                }
+                            },
+                            onClearFields = { fields = emptyList(); fieldsSearched = false },
                             onAddSignature = { fileName ->
                                 val overlay = Overlay.Signature(
                                     fileName = fileName, posN = PointN(0.2f, 0.6f), widthN = 0.35f
@@ -408,6 +442,15 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                 EditorTab.TEXT, EditorTab.SIGN -> Modifier
                     .pointerInput(rect) {
                         detectTapGestures { p ->
+                            // A detected field wins the tap: it is only on screen because the
+                            // user asked for it, and it is what they are aiming at.
+                            val hitField = currentFields.firstOrNull { f ->
+                                fieldRect(rect, f).contains(p)
+                            }
+                            if (hitField != null) {
+                                fillTarget = hitField
+                                return@detectTapGestures
+                            }
                             val selected = currentOverlays.firstOrNull { it.id == currentSelection }
                             val bounds = selected?.let { overlayBounds(rect, it, signatures) }
                             if (selected != null && bounds != null) {
@@ -554,10 +597,70 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
                 } else {
                     drawStrokes(r, strokes, liveStroke, brushColor, brushWidth)
                     drawOverlays(r, overlays, selectedOverlay, signatures, handleRadius)
+                    if (tab == EditorTab.TEXT) {
+                        fields.forEach { field ->
+                            val fr = fieldRect(r, field)
+                            drawRect(
+                                Color(0x2255E39B),
+                                topLeft = fr.topLeft,
+                                size = Size(fr.width, fr.height),
+                            )
+                            drawRect(
+                                Color(0xFF55E39B),
+                                topLeft = fr.topLeft,
+                                size = Size(fr.width, fr.height),
+                                style = StrokeStyle(width = 3f),
+                            )
+                        }
+                    }
                 }
                 pickPoint?.let { drawEyedropper(it, pickColor) }
             }
         }
+    }
+
+    // Typing into a field the detector found. The text is sized and placed to sit in the
+    // space rather than dropped in the middle of the page for the user to drag over.
+    fillTarget?.let { field ->
+        var value by remember(field) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { fillTarget = null },
+            title = { Text(if (field.kind == FieldDetector.Kind.BOX) "Fill this box" else "Fill this line") },
+            text = {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text("Text") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (value.isNotBlank()) {
+                        // Most of the field's height, so it fills the space without touching
+                        // the rule underneath it.
+                        val size = (field.rect.height * FIELD_TEXT_FILL).coerceIn(0.012f, 0.2f)
+                        val overlay = Overlay.Text(
+                            text = value,
+                            // drawText sits on its baseline, which belongs just above the
+                            // bottom of the field rather than at its top.
+                            posN = PointN(
+                                (field.rect.left + field.rect.width * 0.02f).coerceIn(0f, 1f),
+                                (field.rect.bottom - field.rect.height * 0.18f).coerceIn(0f, 1f),
+                            ),
+                            sizeN = size,
+                            color = textColor.toArgb().toLong() and 0xFFFFFFFFL,
+                        )
+                        overlays = overlays + overlay
+                        selectedOverlay = overlay.id
+                        // A filled field is no longer a field, so stop offering it.
+                        fields = fields.filterNot { it === field }
+                    }
+                    fillTarget = null
+                }) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { fillTarget = null }) { Text("Cancel") } },
+        )
     }
 
     // Persist as the user works, so leaving via the system back gesture never loses edits.
@@ -567,6 +670,9 @@ fun PageEditorScreen(docId: String, pageId: String, onBack: () -> Unit) {
         withContext(Dispatchers.IO) { save() }
     }
 }
+
+/** How much of a detected field's height the text placed into it takes up. */
+private const val FIELD_TEXT_FILL = 0.62f
 
 private fun Rect.normalise(p: Offset) = PointN(
     ((p.x - left) / width).coerceIn(0f, 1f),
@@ -723,8 +829,22 @@ private const val PREVIEW_DIM = 720
 /** How still a slider must be before the full-resolution render is worth starting. */
 private const val SETTLE_MS = 260L
 
-/** Signatures can be turned; text cannot (yet). */
-private fun Overlay.rotationDegrees(): Float = (this as? Overlay.Signature)?.rotation ?: 0f
+/** A detected field, mapped from normalised page space into canvas pixels. */
+private fun fieldRect(rect: Rect, field: FieldDetector.Field): Rect = Rect(
+    rect.left + field.rect.left * rect.width,
+    rect.top + field.rect.top * rect.height,
+    rect.left + field.rect.right * rect.width,
+    rect.top + field.rect.bottom * rect.height,
+)
+
+/**
+ * How far this overlay is turned. Drawing, the selection frame, the handles and hit-testing
+ * all read it, so text became rotatable the moment it had an angle to report.
+ */
+private fun Overlay.rotationDegrees(): Float = when (this) {
+    is Overlay.Signature -> rotation
+    is Overlay.Text -> rotation
+}
 
 /** Maps a screen point back into an overlay's own un-rotated space, for hit testing. */
 private fun unrotate(p: Offset, pivot: Offset, degrees: Float): Offset {

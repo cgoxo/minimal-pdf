@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,18 +34,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -86,6 +95,9 @@ import java.util.Locale
 /** Android's own picker caps out around here, and so does anyone's patience for one import. */
 private const val MAX_IMPORT_IMAGES = 30
 
+/** Below this many documents the list is its own index, and a search box is just clutter. */
+private const val SEARCH_THRESHOLD = 3
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -100,8 +112,51 @@ fun HomeScreen(
     var pendingDelete by remember { mutableStateOf<ScanDocument?>(null) }
     var pendingRename by remember { mutableStateOf<ScanDocument?>(null) }
     var importing by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    // Non-empty means selection mode. Long-press a card to enter it, back out to leave.
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val snackbars = remember { SnackbarHostState() }
+
+    // Matched on name only: it is the one thing the user chose and the one thing they will
+    // remember. Case-insensitive, and a blank query means everything.
+    val shown = remember(documents, query) {
+        val q = query.trim()
+        if (q.isEmpty()) documents
+        else documents.filter { it.name.contains(q, ignoreCase = true) }
+    }
+
+    // A selected document that is then deleted elsewhere must not linger in the selection.
+    LaunchedEffect(documents) {
+        if (selected.isNotEmpty()) {
+            val ids = documents.mapTo(HashSet()) { it.id }
+            selected = selected.intersect(ids)
+        }
+    }
+
+    fun shareMany(docs: List<ScanDocument>) {
+        val uris = ArrayList<Uri>()
+        docs.forEach { d -> d.pdfFileName?.let { PdfStore.findByName(context, it)?.let(uris::add) } }
+        if (uris.isEmpty()) {
+            scope.launch { snackbars.showSnackbar("Nothing to share — save these as PDFs first") }
+            return
+        }
+        // One PDF goes out as SEND so the target sees a single file rather than a list of one.
+        val send = if (uris.size == 1) {
+            Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uris[0])
+            }
+        } else {
+            Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "application/pdf"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            }
+        }
+        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.startActivity(Intent.createChooser(send, "Share PDFs"))
+    }
 
     /**
      * Both importers do the same dance: make a document id, decode on IO, then either open
@@ -141,67 +196,158 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Scanly") },
-                actions = {
-                    Text(
-                        "Documents/${PdfStore.FOLDER}",
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(end = 16.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            )
+            if (selected.isEmpty()) {
+                TopAppBar(
+                    title = { Text("Scanly") },
+                    actions = {
+                        Text(
+                            "Documents/${PdfStore.FOLDER}",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(end = 16.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                )
+            } else {
+                // The bar becomes the selection's own toolbar rather than growing a second
+                // row of controls: what the buttons act on is then never in doubt.
+                TopAppBar(
+                    title = { Text("${selected.size} selected") },
+                    navigationIcon = {
+                        IconButton(onClick = { selected = emptySet() }) {
+                            Icon(Icons.Default.Close, "Clear selection")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            selected = if (selected.size == shown.size) emptySet()
+                            else shown.mapTo(HashSet()) { it.id }
+                        }) { Icon(Icons.Default.SelectAll, "Select all") }
+                        IconButton(onClick = {
+                            shareMany(documents.filter { it.id in selected })
+                        }) { Icon(Icons.Default.Share, "Share") }
+                        IconButton(onClick = { confirmBulkDelete = true }) {
+                            Icon(Icons.Default.Delete, "Delete")
+                        }
+                    },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbars) },
         floatingActionButton = {
-            AddMenu(
-                busy = importing,
-                onScan = { onCreate(java.util.UUID.randomUUID().toString()) },
-                onPickImages = {
-                    pickImages.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-                onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) },
-            )
+            // Nothing to add while a selection is live — the bar at the top owns the screen.
+            if (selected.isEmpty()) {
+                AddMenu(
+                    busy = importing,
+                    onScan = { onCreate(java.util.UUID.randomUUID().toString()) },
+                    onPickImages = {
+                        pickImages.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) },
+                )
+            }
         }
     ) { padding ->
-        if (documents.isEmpty()) {
-            EmptyState(Modifier.fillMaxSize().padding(padding))
-        } else {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    top = padding.calculateTopPadding() + 8.dp,
-                    bottom = padding.calculateBottomPadding() + 96.dp,
-                    start = 12.dp, end = 12.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(documents, key = { it.id }) { doc ->
-                    DocumentCard(
-                        doc = doc,
-                        onOpen = { if (doc.pdfFileName != null) onOpen(doc.id) else onEdit(doc.id) },
-                        onEdit = { onEdit(doc.id) },
-                        onRename = { pendingRename = doc },
-                        onShare = {
-                            doc.pdfFileName?.let { name ->
-                                PdfStore.findByName(context, name)?.let { uri ->
-                                    val send = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/pdf"
-                                        putExtra(Intent.EXTRA_STREAM, uri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(Intent.createChooser(send, "Share PDF"))
-                                }
+        Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+            // The search field is offered once there is enough to search. Below three
+            // documents you can see them all, and a box asking what you are looking for is
+            // just something else in the way.
+            if (documents.size >= SEARCH_THRESHOLD) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Search documents") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Close, "Clear search")
                             }
-                        },
-                        onDelete = { pendingDelete = doc },
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                )
+            }
+
+            when {
+                documents.isEmpty() -> EmptyState(Modifier.fillMaxSize())
+
+                shown.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "No document matches \"${query.trim()}\".",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+
+                else -> LazyColumn(
+                    contentPadding = PaddingValues(
+                        top = 8.dp,
+                        bottom = padding.calculateBottomPadding() + 96.dp,
+                        start = 12.dp, end = 12.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(shown, key = { it.id }) { doc ->
+                        val isSelected = doc.id in selected
+                        DocumentCard(
+                            doc = doc,
+                            selectionMode = selected.isNotEmpty(),
+                            isSelected = isSelected,
+                            // While selecting, a tap toggles instead of opening: nobody wants
+                            // to be thrown into a viewer half way through picking files.
+                            onOpen = {
+                                if (selected.isNotEmpty()) {
+                                    selected = if (isSelected) selected - doc.id else selected + doc.id
+                                } else if (doc.pdfFileName != null) {
+                                    onOpen(doc.id)
+                                } else {
+                                    onEdit(doc.id)
+                                }
+                            },
+                            onLongPress = {
+                                selected = if (isSelected) selected - doc.id else selected + doc.id
+                            },
+                            onEdit = { onEdit(doc.id) },
+                            onRename = { pendingRename = doc },
+                            onShare = { shareMany(listOf(doc)) },
+                            onDelete = { pendingDelete = doc },
+                        )
+                    }
                 }
             }
         }
+    }
+
+    // Leaving selection mode is what back should do first, ahead of leaving the screen.
+    BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
+
+    if (confirmBulkDelete) {
+        val victims = documents.filter { it.id in selected }
+        AlertDialog(
+            onDismissRequest = { confirmBulkDelete = false },
+            title = { Text("Delete ${victims.size} documents?") },
+            text = { Text("Their scanned pages and exported PDFs will both be removed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    victims.forEach { d ->
+                        d.pdfFileName?.let { PdfStore.delete(context, it) }
+                        repo.delete(d.id)
+                    }
+                    selected = emptySet()
+                    confirmBulkDelete = false
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmBulkDelete = false }) { Text("Cancel") }
+            },
+        )
     }
 
     pendingDelete?.let { doc ->
@@ -332,17 +478,38 @@ private fun DocumentCard(
     onRename: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
+    selectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onLongPress: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val date = remember(doc.updatedAt) {
         SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault()).format(Date(doc.updatedAt))
     }
 
-    Card(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onOpen, onLongClick = onLongPress),
+        colors = if (isSelected) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        } else {
+            CardDefaults.cardColors()
+        },
+    ) {
         Row(
             Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (selectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    // The whole card is the target; the box is an indicator that happens to
+                    // be tappable, not the only way in.
+                    onCheckedChange = { onLongPress() },
+                    modifier = Modifier.padding(end = 4.dp),
+                )
+            }
             PageThumbnail(
                 docId = doc.id,
                 page = doc.pages.firstOrNull(),
@@ -368,7 +535,8 @@ private fun DocumentCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Box {
+            // The overflow menu is noise while selecting: the toolbar owns the actions.
+            if (!selectionMode) Box {
                 Icon(
                     Icons.Default.MoreVert,
                     contentDescription = "More",

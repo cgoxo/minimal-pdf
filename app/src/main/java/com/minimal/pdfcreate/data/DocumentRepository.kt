@@ -156,7 +156,7 @@ class DocumentRepository(context: Context) {
 
         fun defaultName(): String {
             val fmt = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
-            return "Scanned_" + fmt.format(java.util.Date())
+            return "Scanly_" + fmt.format(java.util.Date())
         }
     }
 }

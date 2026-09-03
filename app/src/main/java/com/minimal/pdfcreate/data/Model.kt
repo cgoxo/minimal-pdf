@@ -68,6 +68,8 @@ sealed interface Overlay {
         override val posN: PointN,
         val sizeN: Float = 0.05f,
         val color: Long = 0xFF000000L,
+        /** Clockwise degrees, about the centre of the text box. */
+        val rotation: Float = 0f,
     ) : Overlay
 
     @Serializable
