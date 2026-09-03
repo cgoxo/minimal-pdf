@@ -20,6 +20,10 @@ Deeper write-ups on the algorithms — the Hough transform, the ColorMatrix cont
 formula, the summed-area table, the homography — live in the author's notes rather
 than here.
 
+If you are here to **learn app development** rather than to work on this code, start with the
+companion series *Why is it so hard to photograph a piece of paper?*, which builds the same
+ideas from curiosity rather than from the file tree.
+
 ---
 
 [← Project README](../README.md)

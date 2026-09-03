@@ -71,20 +71,33 @@ external app, no hand-off.
 ### Home — `ui/home/HomeScreen.kt`
 
 Lists every document, newest first, each with a thumbnail rendered through the normal
-pipeline. The ➕ button creates an empty document and jumps to the camera. The ⋮ menu has
-edit / rename / share / delete.
+pipeline. The ➕ button expands upwards into **Scan pages / Import images / Import PDF**. The
+⋮ menu has edit / rename / share / delete.
+
+A **search box** appears once there are three or more documents — below that the list is its
+own index, and a box asking what you are looking for is just something else in the way.
+
+**Long-press any card** to start selecting. The top bar then becomes the selection's own
+toolbar — select-all, share, delete — so what the buttons act on is never in doubt, and the
+system back gesture leaves selection mode before it leaves the screen.
 
 *Concepts to notice:* `Scaffold` (the standard page skeleton: top bar, content,
 floating action button), `LazyColumn` (a list that only builds the rows currently visible —
 Android's `RecyclerView` in Compose form), `collectAsStateWithLifecycle` (subscribing the UI
-to the repository's `StateFlow` so it updates itself when documents change).
+to the repository's `StateFlow` so it updates itself when documents change),
+`combinedClickable` (tap and long-press on the same target), and `ACTION_SEND_MULTIPLE` for
+sharing several PDFs at once.
 
 ### Camera — `ui/camera/CameraScreen.kt`
 
 Live preview, green edge overlay, thumbnail + count bottom-left, shutter in the middle,
-green ✓ bottom-right.
+green ✓ bottom-right. A **flash toggle** sits top-right — it arms the flash for the next
+shutter press rather than burning a torch while you frame — and **tapping the preview
+focuses** there, because continuous autofocus hunts on a flat page: there is little for it to
+lock onto until you say which part of the frame you mean.
 
-*Concepts to notice:* runtime permission requests; `AndroidView` (how you embed an old-style
+*Concepts to notice:* runtime permission requests; `FocusMeteringAction` and
+`meteringPointFactory` for turning a tap into a focus request; `AndroidView` (how you embed an old-style
 Android `View` — here CameraX's `PreviewView` — inside Compose); binding CameraX use cases to
 a lifecycle so the camera automatically stops when you leave the screen; and the fact that
 `image.close()` in the analyser is mandatory or the frame stream stalls.
@@ -105,7 +118,7 @@ Five tabs over a single drawing surface:
 |---|---|
 | **Filter** | Colour doc (the default) / Original / Greyscale / B&W / Document. Original and Greyscale get brightness, contrast and saturation; **Colour doc, B&W and Document get a single "Ink sensitivity" knob** instead — they are ink decisions, not tone curves, so three sliders was two too many |
 | **Draw** | Freehand brush: a **Colour** button opening a full hue + saturation/value picker, a row of one-tap preset swatches, **Pick from image** (an eyedropper — press and hold the page; a loupe shows the colour under your finger, slide to adjust, lift to accept), size slider, undo, clear |
-| **Text** | Add a text box, drag it, change its size and colour. Tap it to select: a dashed frame appears with a red **✕** on the top-right corner to delete it and a green **grip** on the bottom-right to resize by dragging |
+| **Text** | Add a text box, drag it, change its colour, and **rotate** it with a slider or ±90° buttons. Tap it to select: a dashed frame appears with a red **✕** on the top-right corner to delete it and a green **grip** on the bottom-right to resize. Size is a grip job, not a slider — the same as signatures. The eyedropper works here too, and recolours a selected box in place. **Find blank fields** looks for the places a scanned form expects you to write |
 | **Sign** | Same on-page frame — drag to move, corner grip to resize, ✕ to delete — plus a rotation slider and ±90° buttons. Saved signatures can be deleted from the strip with their own ✕. Two ways to get a signature: **Draw** it on a pad with your finger, or **Scan from paper** — photograph a signature written on paper and the app lifts the ink off the page. Either way it is saved as a reusable transparent PNG that can be dropped on any page and resized |
 | **Crop** | Four draggable corner handles, plus auto-detect and rotate |
 
@@ -118,6 +131,20 @@ actually the signature — everything outside it is dimmed and discarded, which 
 other writing on the page coming along too. The result is auto-trimmed to the ink and
 previewed live as you adjust the box and the sensitivity slider, before anything is saved.
 
+**Filling in a scanned form** (`imaging/FieldDetector.kt`) is the other algorithm worth
+reading on its own. A form marks its fields the same two ways whether it was printed or
+photocopied: a **rule** to write on top of, and a **box** to write inside. Both are long thin
+strokes of ink with nothing beside them. So: build an ink mask the same way the signature
+scanner does (each pixel against its *local* paper brightness, never one global cutoff),
+collect the long horizontal runs, merge them down through the rows they repeat on into rules,
+pair rules into boxes where ink runs down both ends to close them — and then throw away every
+candidate whose writing space already has ink in it, because a question somebody has already
+answered is not a field worth offering. Tap a highlighted blank and the text you type is sized
+and seated in the space rather than dropped in the middle of the page.
+
+It reads *shapes, not characters*. It has no idea what any field is called; that would need
+text recognition, which this app deliberately does not carry.
+
 **Pinch with two fingers to zoom and pan the page** while editing; one finger keeps drawing,
 cropping and dragging overlays. A reset control appears in the top bar while zoomed.
 
@@ -125,7 +152,12 @@ cropping and dragging overlays. A reset control appears in the top bar while zoo
 same coordinate space; `pointerInput` + `detectDragGestures` for the interactions;
 `produceState` to compute bitmaps off the main thread and cancel superseded work; and the
 split between filters that can be previewed for free (a `ColorMatrix` handed to the GPU while
-drawing) and filters that need real per-pixel work (B&W, Document).
+drawing) and filters that need real per-pixel work (B&W, Document, Colour doc).
+
+Those per-pixel filters are previewed **twice**: once immediately against a small copy of the
+page, so the picture tracks your finger down the slider, and once at full resolution after the
+value has been still for a moment. `produceState` cancels the slow render on every change, so
+a drag never queues up a backlog of full-size work it will only throw away.
 
 ### Viewer — `ui/viewer/PdfViewerScreen.kt`
 

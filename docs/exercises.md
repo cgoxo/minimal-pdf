@@ -21,7 +21,10 @@ Each one is a real change with a real file to open.
    architecture and worth doing once by hand.
 9. **Swap the JSON manifest for Room**, Android's SQLite layer — entities, a DAO, a
    migration. The single biggest "real Android app" skill in this list.
-10. **Add OCR** with ML Kit to make exported PDFs searchable. Hard, and genuinely useful.
+10. **Add OCR** with ML Kit to make exported PDFs searchable, and to *label* the blanks
+    `FieldDetector` finds — it can see a field but has no idea what it is called. Hard,
+    genuinely useful, and the one change that would break the "no third-party CV or ML SDK"
+    line the README advertises. Worth doing deliberately or not at all.
 
 ---
 
