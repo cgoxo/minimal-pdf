@@ -14,15 +14,16 @@ jump to whatever you need.
 | [Compose previews](previews.md) | The eleven @Preview composables, how to write one, and why some screens cannot be previewed. |
 | [Troubleshooting](troubleshooting.md) | Symptoms and fixes, from adb not seeing your phone to phantom errors in the IDE. |
 | [Exercises](exercises.md) | Ten changes to make, easiest first, each naming the file to open. |
+| [Project structure → The tests](project-structure.md#the-tests) | Seventeen unit tests that run without a device, and why they are written to embarrass the code. |
 | [Known limitations](limitations.md) | What this app does not do, and what is known to be rough. |
 
 Deeper write-ups on the algorithms — the Hough transform, the ColorMatrix contrast
 formula, the summed-area table, the homography — live in the author's notes rather
 than here.
 
-If you are here to **learn app development** rather than to work on this code, start with the
-companion series *Why is it so hard to photograph a piece of paper?*, which builds the same
-ideas from curiosity rather than from the file tree.
+These pages assume you want to *work on this code*. If instead you want to **learn app
+development**, and would rather start from why any of this is hard than from the file tree,
+that is a different document and it is not in this repository — ask the author.
 
 ---
 

@@ -10,10 +10,12 @@ testApplication/
 ├── local.properties                        path to your Android SDK — machine specific, never commit
 └── app/                                    the one and only module (an "app module")
     ├── build.gradle.kts                    ⭐ how THIS module is built: sdk levels, dependencies
-    └── src/main/
-        ├── AndroidManifest.xml             permissions + launcher activity
-        ├── res/                            icons, strings, themes
-        └── java/com/minimal/pdfcreate/     ⭐ all our Kotlin (yes, it lives in a folder called "java")
+    ├── src/main/
+    │   ├── AndroidManifest.xml             permissions + launcher activity
+    │   ├── res/                            icons, strings, themes
+    │   └── java/com/minimal/pdfcreate/     ⭐ all our Kotlin (yes, it lives in a folder called "java")
+    └── src/test/                           plain JVM unit tests — no device, no emulator
+        └── java/com/minimal/pdfcreate/imaging/
 ```
 
 The Kotlin, grouped by job:
@@ -52,10 +54,43 @@ com/minimal/pdfcreate/
     └── viewer/PdfViewerScreen.kt in-app PDF reader
 ```
 
+## The tests
+
+```
+src/test/java/com/minimal/pdfcreate/imaging/
+├── EdgeDetectorTest.kt          light-on-dark, dark-on-light, low contrast, a page covered
+│                                in print, and a frame with no page in it at all
+├── FieldDetectorTest.kt         a rule, a closed box, a rule already written on, a page of
+│                                prose (must find nothing), a solid printed bar
+└── SignatureExtractorTest.kt    speckle in the corner, texture across the frame, a hairline
+                                 ascender, sub-threshold haze
+```
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+Seventeen tests, and they run in seconds because **none of them touches Android**. The trick is
+that the interesting part of each algorithm is pure arithmetic over an array, so it is split
+out from the bitmap handling and can be driven from a plain JVM test:
+
+```kotlin
+internal fun detectFromMask(ink: BooleanArray, w: Int, h: Int): List<Field>
+internal fun inkBounds(alpha: FloatArray, w: Int, h: Int): Bounds?
+```
+
+`EdgeDetectorTest` reaches its target by reflection rather than widening it, since the entry
+points callers actually use are the public ones.
+
+This is worth copying as a habit. Every one of these tests was written to *break* code that
+already appeared to work, and several succeeded — the print-covered page and the corner speckle
+both found real defects before a user could. If you add an algorithm, give it a synthetic input
+designed to embarrass it.
+
 **Suggested reading order if you want to understand the codebase:**
 `Model.kt` → `DocumentRepository.kt` → `PageRenderer.kt` → `HomeScreen.kt` →
-`CameraScreen.kt` → `PageEditorScreen.kt`. About 3,000 lines total, so it is genuinely
-readable in an afternoon.
+`CameraScreen.kt` → `PageEditorScreen.kt`. About 3,000 lines for that path (6,000 in total),
+so it is genuinely readable in an afternoon.
 
 ---
 

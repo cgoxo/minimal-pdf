@@ -38,6 +38,22 @@ In Compose the tidy way is `produceState(key1, key2) { ... }` — it launches th
 a key changes (you moved the slider again) it **cancels** the previous run instead of
 queueing another. That single behaviour is what keeps the editor responsive.
 
+The filter sliders take it one step further, because filtering a 1600px page is a few hundred
+milliseconds of honest work and a finger produces dozens of values a second. So the page is
+rendered **twice**: immediately against a 720px copy, which is what tracks your finger, and at
+full resolution only after the value has been still for 260 ms. Because `produceState` cancels
+on every change, the expensive render starts *zero* times during a drag — the cancellation
+happens inside the `delay`, before any work begins:
+
+```kotlin
+value = null
+delay(SETTLE_MS)          // ← cancelled here if the slider moves again
+value = withContext(Dispatchers.Default) { Filters.apply(base, filter) }
+```
+
+The same debounce-by-cancellation trick saves the page to disk (`LaunchedEffect` + `delay(400)`),
+for a completely different reason. Worth recognising as a pattern.
+
 ### 5. State flows one way
 
 Data lives in `DocumentRepository` and is exposed as a `StateFlow`. Screens read it and
@@ -59,6 +75,16 @@ Two different places, on purpose:
 The rule since Android 10 ("scoped storage"): an app can freely write into a public
 collection via **MediaStore**, and can always read back **its own** entries there without any
 storage permission. That is why this app asks for camera access and nothing else.
+
+Note the word *own*. Ownership is tracked per file by package name, and it can be lost — an
+uninstall, or a file replaced by another process. When that happens the app can no longer see
+a PDF it wrote itself, sitting in a folder you can see, with its name on it. `refresh()`
+reconciles against the folder and reverts such documents to drafts rather than leaving a card
+that opens nothing; because the pages themselves are private and were never lost, saving again
+fixes it. See [Known limitations](limitations.md).
+
+Reads also span the old `Documents/minimalPdf` folder, so PDFs exported before the rename are
+still found. Writes only ever go to the new one.
 
 Writing a file via MediaStore is a three-step dance you can read in `PdfStore.write`:
 insert a row with `IS_PENDING = 1` → write the bytes to the returned URI → set
