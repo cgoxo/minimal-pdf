@@ -103,3 +103,11 @@ platform rather than handed to a third-party SDK — **no OpenCV, no ML Kit, no 
 | PDF writing | `android.graphics.pdf.PdfDocument` |
 | PDF viewing / import | `android.graphics.pdf.PdfRenderer` |
 | Camera | CameraX |
+
+## License
+
+Scanly is free software, licensed under the **[GNU General Public License v3.0](LICENSE)**.
+
+You may use, study, share and modify it. If you distribute Scanly or anything derived from it,
+you must pass on those same freedoms and make your source available — which is the point: it
+keeps anyone from wrapping this app back up in the ads and subscriptions it exists to avoid.

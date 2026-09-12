@@ -1,0 +1,3 @@
+First F-Droid release.
+
+Scanly is now released under the GNU GPL v3, and ships the metadata F-Droid needs to build and list it. No functional changes from 0.1.8 — the accompanying documentation was corrected to match what the last three releases actually shipped.

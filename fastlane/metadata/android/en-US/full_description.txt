@@ -1,0 +1,19 @@
+Point the camera at a page — Scanly finds the edges, straightens the page, cleans it up, and saves a PDF to Documents/Scanly. Read, annotate, sign and re-edit it, all inside the app.
+
+Every free scanner app is a scanner first and something else second: a subscription funnel, an ad surface, an account you did not want, a cloud you did not ask to upload your bank statements to. Scanly is the scanner without the wrapper. No ads, no accounts, no subscriptions, no analytics, and one permission — CAMERA. It opens straight to your documents and saves a real PDF to a folder you can see in your file manager.
+
+Nothing you do is final. A page stores your crop, your filter and your annotations as instructions rather than flattened pixels, so any page of any document reopens months later with every slider exactly where you left it. You never have to rescan because you flattened something by accident.
+
+Features:
+
+* Scan with live page-edge detection, tap-to-focus and a flash toggle — drag the corners when it guesses wrong
+* Import photos from the gallery, or an existing PDF, whose pages come in editable
+* Filters — captures land as Colour doc by default, with paper whitened and shadows flattened but colour kept. Original, Greyscale, B&W and Document are one tap away
+* Draw and Text share a brush colour picker, presets, an eyedropper that samples straight off the page, and undo
+* Text and signatures can be dragged, resized and rotated. Signatures can be drawn on a pad or scanned off paper, with the ink lifted onto a transparent background
+* Fill a scanned form — Scanly finds the blank rules and boxes on a page and lets you tap one to type into it, skipping any it can see are already filled in
+* Search your documents, and select several at once to share or delete
+* Built-in viewer, with no hand-off to a cloud drive
+* Every page is exported as a real A4 sheet, portrait or landscape
+
+The interesting parts are written against the Android platform rather than handed to a third-party SDK — no OpenCV, no ML Kit, no PDF library. Page detection is a Sobel filter and a gradient-guided Hough transform written by hand; perspective correction, filtering, PDF writing and PDF rendering all use the Android graphics stack directly.
